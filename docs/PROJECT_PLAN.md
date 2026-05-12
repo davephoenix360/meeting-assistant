@@ -68,6 +68,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Local Whisper transcription provider is scaffolded behind the transcription provider abstraction for free, local speech-to-text.
 - The frontend can show active transcription provider status before upload and on settings/detail screens.
 - Calendar accounts and imported calendar events have provider-neutral backend models and a workspace UI.
+- Calendar integration has provider status, OAuth URL, callback, and sync boundary scaffolding.
 - Transcript provenance metadata is persisted and displayed for pasted and transcribed meetings.
 - Workspace search spans meetings, transcripts, AI summaries, and action items.
 - OpenRouter provider implementation exists.
@@ -124,6 +125,9 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 - [x] Calendar account model.
 - [x] Manual calendar event import foundation.
+- [x] Provider calendar event sync service boundaries.
+- [x] OAuth URL and callback scaffolding.
+- [ ] OAuth token exchange and encrypted token storage.
 - [ ] Provider calendar event sync.
 - [ ] Attach imported artifacts to meetings.
 - [ ] Post-meeting transcript/recording imports where APIs allow.
@@ -148,7 +152,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add provider calendar event sync service boundaries.
-2. Attach imported artifacts to meetings.
-3. Add calendar-based meeting creation/import UI.
-4. Add OAuth callback scaffolding for Google and Microsoft.
+1. Add OAuth token exchange and encrypted token storage.
+2. Add provider calendar event sync.
+3. Attach imported artifacts to meetings.
+4. Add calendar-based meeting creation/import UI.

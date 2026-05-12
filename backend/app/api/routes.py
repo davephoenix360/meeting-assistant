@@ -38,6 +38,9 @@ from app.schemas.calendar import (
     CalendarAccountOut,
     CalendarEventCreate,
     CalendarEventOut,
+    CalendarOAuthStartOut,
+    CalendarProviderStatusOut,
+    CalendarSyncResultOut,
 )
 from app.core.config import settings
 from app.services.summarization.meeting_summarizer import MeetingSummarizer
@@ -50,6 +53,11 @@ from app.services.transcription.base import TranscriptionProviderError
 from app.services.transcription.factory import (
     get_transcription_provider,
     get_transcription_provider_status,
+)
+from app.services.calendar.providers import (
+    build_calendar_authorization_url,
+    list_calendar_provider_statuses,
+    sync_calendar_account,
 )
 import os
 import re
@@ -391,6 +399,42 @@ def list_calendar_accounts(
     return [calendar_account_out(account) for account in accounts]
 
 
+@router.get("/calendar/providers", response_model=list[CalendarProviderStatusOut])
+def list_calendar_providers():
+    return list_calendar_provider_statuses()
+
+
+@router.get("/calendar/oauth/{provider}/start", response_model=CalendarOAuthStartOut)
+def start_calendar_oauth(provider: str, workspace_id: int = 1):
+    try:
+        return build_calendar_authorization_url(provider, workspace_id=workspace_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/calendar/oauth/{provider}/callback")
+def calendar_oauth_callback(
+    provider: str,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    if error:
+        raise HTTPException(400, f"{provider} OAuth failed: {error}")
+    if not code:
+        raise HTTPException(400, "OAuth callback missing authorization code")
+
+    return {
+        "provider": provider,
+        "state": state,
+        "status": "received_code",
+        "message": (
+            "OAuth callback scaffolding is wired. Token exchange and encrypted "
+            "refresh-token storage will be added before real provider sync."
+        ),
+    }
+
+
 @router.post("/calendar/accounts", response_model=CalendarAccountOut)
 def create_calendar_account(
     payload: CalendarAccountCreate,
@@ -409,6 +453,18 @@ def create_calendar_account(
     db.commit()
     db.refresh(account)
     return calendar_account_out(account)
+
+
+@router.post("/calendar/accounts/{account_id}/sync", response_model=CalendarSyncResultOut)
+def sync_calendar_account_route(account_id: int, db: Session = Depends(get_db)):
+    account = db.get(CalendarAccount, account_id)
+    if not account:
+        raise HTTPException(404)
+    result = sync_calendar_account(account)
+    if result["status"] not in {"not_configured", "not_connected"}:
+        account.last_sync_at = func.now()
+        db.commit()
+    return result
 
 
 @router.post("/calendar/accounts/{account_id}/disconnect", response_model=CalendarAccountOut)

@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     local_whisper_device: str = "auto"
     local_whisper_compute_type: str = "default"
     upload_dir: str = "./storage/uploads"
+    backend_public_url: str = "http://localhost:8000"
+    google_calendar_client_id: str | None = None
+    google_calendar_client_secret: str | None = None
+    microsoft_calendar_client_id: str | None = None
+    microsoft_calendar_client_secret: str | None = None
+    microsoft_calendar_tenant: str = "common"
     # Keep this as a simple string so pydantic-settings doesn't require JSON
     # parsing for list types in `.env`. Accepts either CSV or JSON array.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"

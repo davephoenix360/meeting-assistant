@@ -841,6 +841,21 @@ h3 {
   padding: 14px;
 }
 
+.provider-status-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.provider-status {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
 .summary-panel {
   background:
     linear-gradient(135deg, rgba(219, 234, 254, 0.52), transparent 64%),
@@ -1097,6 +1112,12 @@ h3 {
   color: var(--rose);
   padding: 13px 14px;
   line-height: 1.45;
+}
+
+.muted-alert {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
 }
 
 .footer-note {

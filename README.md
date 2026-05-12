@@ -46,6 +46,6 @@ npm run dev
   - `local_whisper` runs local speech-to-text with `faster-whisper`; install the optional package before enabling it.
   - Tune local transcription with `LOCAL_WHISPER_MODEL`, `LOCAL_WHISPER_DEVICE`, and `LOCAL_WHISPER_COMPUTE_TYPE`.
   - Check the active provider with `GET /api/transcription/status`.
-- Calendar accounts and manual calendar events can be managed from `/calendar`. External provider OAuth is not connected yet; see `docs/05_CALENDAR_INTEGRATION_NOTES.md` for the credentials and setup inputs that will be needed.
+- Calendar accounts and manual calendar events can be managed from `/calendar`. OAuth URL scaffolding is available for Google and Microsoft once client credentials are configured; see `docs/05_CALENDAR_INTEGRATION_NOTES.md`.
 - Background jobs use a simple async task runner for MVP; Redis queue integration is scaffolded with TODO markers.
 - See `docs/04_MEETING_PLATFORM_ROADMAP.md` for Zoom/Meet/Teams roadmap constraints.

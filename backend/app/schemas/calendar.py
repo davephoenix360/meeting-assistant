@@ -119,3 +119,32 @@ class CalendarEventOut(BaseModel):
     raw: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+class CalendarProviderStatusOut(BaseModel):
+    provider: str
+    label: str
+    configured: bool
+    client_id_configured: bool
+    client_secret_configured: bool
+    redirect_uri: str
+    scopes: list[str]
+    auth_url: str
+    events_url: str
+
+
+class CalendarOAuthStartOut(BaseModel):
+    provider: str
+    configured: bool
+    authorization_url: str
+    redirect_uri: str
+    scopes: list[str]
+    state: str
+
+
+class CalendarSyncResultOut(BaseModel):
+    account_id: int
+    provider: str
+    status: str
+    message: str
+    events_imported: int = 0

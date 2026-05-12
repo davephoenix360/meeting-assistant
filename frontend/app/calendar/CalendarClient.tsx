@@ -33,9 +33,22 @@ export type CalendarEvent = {
   imported_meeting_id?: number | null;
 };
 
+export type CalendarProviderStatus = {
+  provider: string;
+  label: string;
+  configured: boolean;
+  client_id_configured: boolean;
+  client_secret_configured: boolean;
+  redirect_uri: string;
+  scopes: string[];
+  auth_url: string;
+  events_url: string;
+};
+
 type Props = {
   initialAccounts: CalendarAccount[];
   initialEvents: CalendarEvent[];
+  providerStatuses: CalendarProviderStatus[];
 };
 
 async function postJson<T>(path: string, body?: unknown): Promise<T> {
@@ -76,7 +89,11 @@ function providerLabel(provider: string) {
   return labels[provider] || provider;
 }
 
-export function CalendarClient({ initialAccounts, initialEvents }: Props) {
+export function CalendarClient({
+  initialAccounts,
+  initialEvents,
+  providerStatuses,
+}: Props) {
   const [accounts, setAccounts] = useState(initialAccounts);
   const [events, setEvents] = useState(initialEvents);
   const [provider, setProvider] = useState("local");
@@ -93,6 +110,8 @@ export function CalendarClient({ initialAccounts, initialEvents }: Props) {
   const [meetingUrl, setMeetingUrl] = useState("");
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [isSavingEvent, setIsSavingEvent] = useState(false);
+  const [syncingAccountId, setSyncingAccountId] = useState<number | null>(null);
+  const [syncMessage, setSyncMessage] = useState("");
   const [error, setError] = useState("");
 
   const connectedAccounts = useMemo(
@@ -144,6 +163,24 @@ export function CalendarClient({ initialAccounts, initialEvents }: Props) {
     }
   }
 
+  async function syncAccount(nextAccountId: number) {
+    setSyncingAccountId(nextAccountId);
+    setSyncMessage("");
+    setError("");
+    try {
+      const result = await postJson<{
+        status: string;
+        message: string;
+        events_imported: number;
+      }>(`/calendar/accounts/${nextAccountId}/sync`);
+      setSyncMessage(`${result.status}: ${result.message}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sync account.");
+    } finally {
+      setSyncingAccountId(null);
+    }
+  }
+
   async function importEvent() {
     if (!accountId || !eventTitle.trim() || !externalId.trim() || isSavingEvent) {
       return;
@@ -178,6 +215,7 @@ export function CalendarClient({ initialAccounts, initialEvents }: Props) {
     <section className="calendar-layout">
       <div className="section-stack">
         {error ? <div className="alert">{error}</div> : null}
+        {syncMessage ? <div className="alert muted-alert">{syncMessage}</div> : null}
 
         <section className="panel">
           <div className="section-heading compact">
@@ -249,13 +287,23 @@ export function CalendarClient({ initialAccounts, initialEvents }: Props) {
                       {account.status}
                     </span>
                     {account.status !== "disconnected" ? (
-                      <button
-                        className="button subtle danger compact-button"
-                        onClick={() => void disconnectAccount(account.id)}
-                        type="button"
-                      >
-                        Disconnect
-                      </button>
+                      <>
+                        <button
+                          className="button subtle compact-button"
+                          disabled={syncingAccountId === account.id}
+                          onClick={() => void syncAccount(account.id)}
+                          type="button"
+                        >
+                          {syncingAccountId === account.id ? "Syncing..." : "Sync"}
+                        </button>
+                        <button
+                          className="button subtle danger compact-button"
+                          onClick={() => void disconnectAccount(account.id)}
+                          type="button"
+                        >
+                          Disconnect
+                        </button>
+                      </>
                     ) : null}
                   </div>
                 </article>
@@ -396,9 +444,37 @@ export function CalendarClient({ initialAccounts, initialEvents }: Props) {
           <li>Calendar read scopes approved for your account</li>
           <li>Test calendar account with meeting links and artifacts</li>
         </ul>
+        <div className="provider-status-list">
+          {providerStatuses.map((status) => (
+            <div className="provider-status" key={status.provider}>
+              <div className="related-heading">
+                <strong>{status.label}</strong>
+                <span className={`status ${status.configured ? "completed" : "uploaded"}`}>
+                  {status.configured ? "Configured" : "Missing keys"}
+                </span>
+              </div>
+              <p className="helper">{status.redirect_uri}</p>
+              <div className="meta-row">
+                {status.scopes.slice(0, 2).map((scope) => (
+                  <span className="pill" key={scope}>
+                    {scope}
+                  </span>
+                ))}
+              </div>
+              {status.client_id_configured ? (
+                <a
+                  className="button subtle compact-button"
+                  href={`${API_BASE_URL}/calendar/oauth/${status.provider}/start?workspace_id=1`}
+                >
+                  Start OAuth
+                </a>
+              ) : null}
+            </div>
+          ))}
+        </div>
         <p className="footer-note">
-          This page does not call external calendar APIs yet. It establishes the
-          storage and API shape that provider sync will use.
+          This page can build provider authorization URLs once credentials are
+          configured. Token exchange and encrypted refresh-token storage come next.
         </p>
       </aside>
     </section>
