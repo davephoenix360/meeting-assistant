@@ -82,6 +82,15 @@ class MeetingAIOutput(Base):
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class MeetingSavedView(Base):
+    __tablename__ = "meeting_saved_views"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"))
+    name: Mapped[str] = mapped_column(String(120))
+    filters_json: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ActionItem(Base):
     __tablename__ = "action_items"
     id: Mapped[int] = mapped_column(primary_key=True)

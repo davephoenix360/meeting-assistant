@@ -58,6 +58,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Meeting detail supports editing core generated summary sections before export.
 - Meeting detail supports regenerating individual AI-generated sections without reprocessing the whole meeting.
 - Meetings support user-managed tags for library filtering and search.
+- Meeting library supports reusable saved filter views.
 - New meeting flow supports audio/video upload intake against the backend upload endpoint.
 - Uploaded recordings can be converted into a placeholder transcript until a real transcription provider is connected.
 - Local Whisper transcription provider is scaffolded behind the transcription provider abstraction for free, local speech-to-text.
@@ -100,7 +101,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Meeting library page.
 - [x] Search meetings by title, transcript, summary, and action text.
 - [x] Add meeting tags.
-- [ ] Add saved views or filters.
+- [x] Add saved views or filters.
 - [ ] Add related meetings / memory recall.
 
 ### Phase 4: Audio/Video Transcription
@@ -138,7 +139,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add saved views or filters.
-2. Add related meetings / memory recall.
-3. Add calendar account model.
-4. Add calendar event import.
+1. Add related meetings / memory recall.
+2. Add calendar account model.
+3. Add calendar event import.
+4. Attach imported artifacts to meetings.

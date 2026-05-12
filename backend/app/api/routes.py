@@ -5,13 +5,21 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from pydantic import ValidationError
 from app.db.session import get_db
-from app.models.models import Meeting, MeetingStatus, MeetingAIOutput, ActionItem
+from app.models.models import (
+    Meeting,
+    MeetingStatus,
+    MeetingAIOutput,
+    MeetingSavedView,
+    ActionItem,
+)
 from app.schemas.meeting import (
     MeetingCreate,
     MeetingTagsUpdate,
     MeetingOut,
     TranscriptIn,
     MeetingAIOutputOut,
+    MeetingSavedViewCreate,
+    MeetingSavedViewOut,
     MeetingSummaryUpdate,
     MeetingSummaryRegenerateIn,
     ActionItemCreate,
@@ -80,6 +88,36 @@ def normalize_tags(tags: list[str] | None) -> list[str]:
     return normalized[:12]
 
 
+def normalize_meeting_filters(filters: dict | None) -> dict:
+    filters = filters or {}
+    normalized: dict[str, str] = {}
+    q = str(filters.get("q") or "").strip()
+    status = str(filters.get("status") or "").strip()
+    source_type = str(filters.get("source_type") or "").strip()
+    tag = str(filters.get("tag") or "").strip()
+
+    if q:
+        normalized["q"] = q[:120]
+    if status:
+        normalized["status"] = status[:32]
+    if source_type:
+        normalized["source_type"] = source_type[:32]
+    tag_values = normalize_tags([tag])
+    if tag_values:
+        normalized["tag"] = tag_values[0]
+    return normalized
+
+
+def saved_view_out(view: MeetingSavedView) -> MeetingSavedViewOut:
+    return MeetingSavedViewOut(
+        id=view.id,
+        workspace_id=view.workspace_id,
+        name=view.name,
+        filters=normalize_meeting_filters(view.filters_json),
+        created_at=view.created_at,
+    )
+
+
 def sync_generated_action_items(
     db: Session, meeting_id: int, summary: MeetingSummarySchema
 ) -> None:
@@ -109,12 +147,31 @@ def create_meeting(payload: MeetingCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/meetings", response_model=list[MeetingOut])
-def list_meetings(tag: str | None = None, db: Session = Depends(get_db)):
+def list_meetings(
+    tag: str | None = None,
+    status: str | None = None,
+    source_type: str | None = None,
+    q: str | None = None,
+    db: Session = Depends(get_db),
+):
     query = db.query(Meeting)
     if tag:
         normalized = normalize_tags([tag])
         if normalized:
             query = query.filter(cast(Meeting.tags, String).ilike(f"%{normalized[0]}%"))
+    if status:
+        query = query.filter(cast(Meeting.status, String) == status)
+    if source_type:
+        query = query.filter(cast(Meeting.source_type, String) == source_type)
+    if q:
+        pattern = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                Meeting.title.ilike(pattern),
+                Meeting.transcript_text.ilike(pattern),
+                cast(Meeting.tags, String).ilike(pattern),
+            )
+        )
     return query.order_by(Meeting.id.desc()).all()
 
 
@@ -125,6 +182,52 @@ def list_tags(db: Session = Depends(get_db)):
         for tag in normalize_tags(row_tags[0]):
             tags.add(tag)
     return sorted(tags)
+
+
+@router.get("/meeting-views", response_model=list[MeetingSavedViewOut])
+def list_meeting_saved_views(
+    workspace_id: int = 1, db: Session = Depends(get_db)
+):
+    views = (
+        db.query(MeetingSavedView)
+        .filter(MeetingSavedView.workspace_id == workspace_id)
+        .order_by(MeetingSavedView.created_at.desc(), MeetingSavedView.id.desc())
+        .all()
+    )
+    return [saved_view_out(view) for view in views]
+
+
+@router.post("/meeting-views", response_model=MeetingSavedViewOut)
+def create_meeting_saved_view(
+    payload: MeetingSavedViewCreate, db: Session = Depends(get_db)
+):
+    name = " ".join(payload.name.strip().split())
+    if not name:
+        raise HTTPException(400, "Saved view name is required")
+
+    filters = normalize_meeting_filters(payload.filters)
+    if not filters:
+        raise HTTPException(400, "Choose at least one filter before saving a view")
+
+    view = MeetingSavedView(
+        workspace_id=payload.workspace_id,
+        name=name[:120],
+        filters_json=filters,
+    )
+    db.add(view)
+    db.commit()
+    db.refresh(view)
+    return saved_view_out(view)
+
+
+@router.delete("/meeting-views/{view_id}")
+def delete_meeting_saved_view(view_id: int, db: Session = Depends(get_db)):
+    view = db.get(MeetingSavedView, view_id)
+    if not view:
+        raise HTTPException(404)
+    db.delete(view)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/search", response_model=list[SearchResultOut])

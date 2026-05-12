@@ -55,6 +55,20 @@ class MeetingAIOutputOut(BaseModel):
     quality_json: dict | None = None
 
 
+class MeetingSavedViewCreate(BaseModel):
+    workspace_id: int = 1
+    name: str
+    filters: dict = Field(default_factory=dict)
+
+
+class MeetingSavedViewOut(BaseModel):
+    id: int
+    workspace_id: int
+    name: str
+    filters: dict
+    created_at: datetime
+
+
 class MeetingSummaryUpdate(BaseModel):
     title: str | None = None
     executive_summary: str | None = None

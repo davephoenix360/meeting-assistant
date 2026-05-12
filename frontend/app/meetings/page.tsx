@@ -1,5 +1,11 @@
 import Link from "next/link";
 import { api } from "../../lib/api";
+import {
+  meetingFiltersHref,
+  SavedViewsClient,
+  type MeetingFilters,
+  type SavedMeetingView,
+} from "./SavedViewsClient";
 
 type Meeting = {
   id: number;
@@ -12,7 +18,10 @@ type Meeting = {
 
 type Props = {
   searchParams?: {
+    q?: string;
     tag?: string;
+    status?: string;
+    source_type?: string;
   };
 };
 
@@ -30,14 +39,39 @@ function formatSource(source: string) {
   return source.replace("_", " ");
 }
 
+const statusOptions = [
+  ["", "Any status"],
+  ["created", "Draft"],
+  ["uploaded", "Uploaded"],
+  ["transcribing", "Transcribing"],
+  ["transcribed", "Ready"],
+  ["summarizing", "Processing"],
+  ["completed", "Completed"],
+  ["failed", "Failed"],
+];
+
+const sourceOptions = [
+  ["", "Any source"],
+  ["transcript", "Transcript"],
+  ["upload", "Upload"],
+  ["zoom", "Zoom"],
+  ["google_meet", "Google Meet"],
+  ["teams", "Teams"],
+];
+
 export default async function MeetingsPage({ searchParams }: Props) {
-  const activeTag = (searchParams?.tag || "").trim();
-  const meetingsPath = activeTag
-    ? `/meetings?tag=${encodeURIComponent(activeTag)}`
-    : "/meetings";
-  const [meetings, tags] = await Promise.all([
+  const filters: MeetingFilters = {
+    q: (searchParams?.q || "").trim(),
+    tag: (searchParams?.tag || "").trim(),
+    status: (searchParams?.status || "").trim(),
+    source_type: (searchParams?.source_type || "").trim(),
+  };
+  const meetingsPath = meetingFiltersHref(filters);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const [meetings, tags, savedViews] = await Promise.all([
     (await api(meetingsPath)).json() as Promise<Meeting[]>,
     (await api("/tags")).json() as Promise<string[]>,
+    (await api("/meeting-views?workspace_id=1")).json() as Promise<SavedMeetingView[]>,
   ]);
   const completed = meetings.filter((meeting) => meeting.status === "completed").length;
   const ready = meetings.filter((meeting) => meeting.status === "transcribed").length;
@@ -49,7 +83,7 @@ export default async function MeetingsPage({ searchParams }: Props) {
           <p className="eyebrow">Workspace</p>
           <h2>Meetings</h2>
           <p className="lead">
-            Review processed notes, continue drafts, or filter meeting memory by tag.
+            Review processed notes, continue drafts, or reuse saved filters.
           </p>
         </div>
         <div className="actions">
@@ -83,25 +117,79 @@ export default async function MeetingsPage({ searchParams }: Props) {
             <p className="eyebrow">Library</p>
             <h3>Meeting history</h3>
           </div>
-          <span className="pill">
-            {activeTag ? `${meetings.length} tagged` : `${meetings.length} total`}
-          </span>
+          <span className="pill">{meetings.length} shown</span>
         </div>
 
-        {tags.length ? (
-          <div className="tag-filter-bar" aria-label="Filter meetings by tag">
-            <Link className={`pill link-pill ${activeTag ? "" : "active"}`} href="/meetings">
-              All
+        <form className="library-filter-form" action="/meetings">
+          <label className="field">
+            <span className="label">Search</span>
+            <input
+              className="input compact-input"
+              defaultValue={filters.q}
+              name="q"
+              placeholder="Title, transcript, or tag"
+            />
+          </label>
+          <label className="field">
+            <span className="label">Tag</span>
+            <select className="input compact-input" defaultValue={filters.tag} name="tag">
+              <option value="">Any tag</option>
+              {tags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="label">Status</span>
+            <select
+              className="input compact-input"
+              defaultValue={filters.status}
+              name="status"
+            >
+              {statusOptions.map(([value, label]) => (
+                <option key={value || "any"} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="label">Source</span>
+            <select
+              className="input compact-input"
+              defaultValue={filters.source_type}
+              name="source_type"
+            >
+              {sourceOptions.map(([value, label]) => (
+                <option key={value || "any"} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="actions library-filter-actions">
+            <button className="button primary compact-button" type="submit">
+              Apply
+            </button>
+            <Link className="button compact-button" href="/meetings">
+              Clear
             </Link>
-            {tags.map((tag) => (
-              <Link
-                className={`pill link-pill ${activeTag === tag ? "active" : ""}`}
-                href={`/meetings?tag=${encodeURIComponent(tag)}`}
-                key={tag}
-              >
-                {tag}
-              </Link>
-            ))}
+          </div>
+        </form>
+
+        <SavedViewsClient currentFilters={filters} initialViews={savedViews} />
+
+        {activeFilterCount ? (
+          <div className="tag-filter-bar" aria-label="Active meeting filters">
+            <span className="pill">{activeFilterCount} active filter{activeFilterCount === 1 ? "" : "s"}</span>
+            {filters.q ? <span className="pill">Search: {filters.q}</span> : null}
+            {filters.tag ? <span className="pill tag-pill">{filters.tag}</span> : null}
+            {filters.status ? (
+              <span className={`status ${filters.status}`}>{statusCopy[filters.status] || filters.status}</span>
+            ) : null}
+            {filters.source_type ? <span className="pill">{formatSource(filters.source_type)}</span> : null}
           </div>
         ) : null}
 
@@ -139,7 +227,7 @@ export default async function MeetingsPage({ searchParams }: Props) {
                         {meeting.tags.map((tag) => (
                           <Link
                             className="pill tag-pill"
-                            href={`/meetings?tag=${encodeURIComponent(tag)}`}
+                            href={meetingFiltersHref({ ...filters, tag })}
                             key={tag}
                           >
                             {tag}
