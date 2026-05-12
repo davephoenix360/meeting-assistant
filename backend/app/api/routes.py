@@ -9,12 +9,13 @@ from app.schemas.meeting import (
     TranscriptIn,
     MeetingAIOutputOut,
     ActionItemUpdate,
+    ActionItemOut,
 )
 from app.core.config import settings
-from app.services.llm.openrouter_provider import OpenRouterProvider
 from app.services.summarization.meeting_summarizer import MeetingSummarizer
 from app.jobs.process_meeting import process_meeting
 from app.services.llm.base import LLMProviderError
+from app.services.llm.factory import get_llm_provider
 import os
 
 router = APIRouter(prefix="/api")
@@ -83,12 +84,13 @@ async def process(meeting_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     if not meeting.transcript_text:
         raise HTTPException(400, "Transcript required for MVP")
-    llm = OpenRouterProvider(settings.openrouter_api_key or "")
-    summarizer = MeetingSummarizer(llm, settings.openrouter_default_model)
     try:
-        await process_meeting(
-            meeting, db, summarizer, "openrouter", settings.openrouter_default_model
-        )
+        provider_name, model, llm = get_llm_provider()
+    except ValueError as e:
+        raise HTTPException(500, str(e))
+    summarizer = MeetingSummarizer(llm, model)
+    try:
+        await process_meeting(meeting, db, summarizer, provider_name, model)
         return {"ok": True}
     except LLMProviderError as e:
         status = e.status_code or 502
@@ -106,6 +108,33 @@ def get_ai_output(meeting_id: int, db: Session = Depends(get_db)):
     return out
 
 
+@router.get("/action-items", response_model=list[ActionItemOut])
+def list_action_items(status: str | None = None, db: Session = Depends(get_db)):
+    query = (
+        db.query(ActionItem, Meeting.title.label("meeting_title"))
+        .join(Meeting, ActionItem.meeting_id == Meeting.id)
+        .order_by(ActionItem.created_at.desc(), ActionItem.id.desc())
+    )
+    if status:
+        query = query.filter(ActionItem.status == status)
+
+    return [
+        ActionItemOut(
+            id=item.id,
+            meeting_id=item.meeting_id,
+            meeting_title=meeting_title,
+            task=item.task,
+            owner=item.owner,
+            due_date=item.due_date,
+            priority=item.priority,
+            status=item.status,
+            evidence=item.evidence,
+            created_at=item.created_at,
+        )
+        for item, meeting_title in query.all()
+    ]
+
+
 @router.patch("/action-items/{action_item_id}")
 def patch_action_item(
     action_item_id: int, payload: ActionItemUpdate, db: Session = Depends(get_db)
@@ -113,7 +142,7 @@ def patch_action_item(
     item = db.get(ActionItem, action_item_id)
     if not item:
         raise HTTPException(404)
-    for k, v in payload.model_dump(exclude_none=True).items():
+    for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(item, k, v)
     db.commit()
     db.refresh(item)

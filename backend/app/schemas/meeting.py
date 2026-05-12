@@ -39,3 +39,16 @@ class ActionItemUpdate(BaseModel):
     priority: str | None = None
     status: str | None = None
     evidence: str | None = None
+
+
+class ActionItemOut(BaseModel):
+    id: int
+    meeting_id: int
+    meeting_title: str
+    task: str
+    owner: str | None
+    due_date: str | None
+    priority: str
+    status: str
+    evidence: str
+    created_at: datetime

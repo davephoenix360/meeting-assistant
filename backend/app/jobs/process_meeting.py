@@ -14,13 +14,21 @@ async def process_meeting(
     db.commit()
     try:
         summary = await summarizer.summarize_transcript(meeting.transcript_text or "")
-        output = MeetingAIOutput(
-            meeting_id=meeting.id,
-            provider=provider_name,
-            model=model,
-            summary_json=summary.model_dump(),
-        )
-        db.add(output)
+        output = db.query(MeetingAIOutput).filter_by(meeting_id=meeting.id).first()
+        if output:
+            output.provider = provider_name
+            output.model = model
+            output.summary_json = summary.model_dump()
+        else:
+            output = MeetingAIOutput(
+                meeting_id=meeting.id,
+                provider=provider_name,
+                model=model,
+                summary_json=summary.model_dump(),
+            )
+            db.add(output)
+
+        db.query(ActionItem).filter_by(meeting_id=meeting.id).delete()
         for ai in summary.action_items:
             db.add(
                 ActionItem(
