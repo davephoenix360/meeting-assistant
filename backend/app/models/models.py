@@ -91,6 +91,43 @@ class MeetingSavedView(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class CalendarAccount(Base):
+    __tablename__ = "calendar_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"))
+    provider: Mapped[str] = mapped_column(String(64))
+    account_email: Mapped[str] = mapped_column(String(255))
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="connected")
+    scopes_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    provider_metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    connected_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_sync_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class CalendarEvent(Base):
+    __tablename__ = "calendar_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"))
+    calendar_account_id: Mapped[int] = mapped_column(ForeignKey("calendar_accounts.id"))
+    external_event_id: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(255))
+    starts_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    organizer_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    meeting_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attendees_json: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    artifacts_json: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    imported_meeting_id: Mapped[int | None] = mapped_column(ForeignKey("meetings.id"), nullable=True)
+    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class ActionItem(Base):
     __tablename__ = "action_items"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import String, cast, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from pydantic import ValidationError
@@ -10,6 +11,8 @@ from app.models.models import (
     MeetingStatus,
     MeetingAIOutput,
     MeetingSavedView,
+    CalendarAccount,
+    CalendarEvent,
     ActionItem,
 )
 from app.schemas.meeting import (
@@ -30,6 +33,12 @@ from app.schemas.meeting import (
     TranscriptionProviderStatusOut,
 )
 from app.schemas.summary import MeetingSummarySchema
+from app.schemas.calendar import (
+    CalendarAccountCreate,
+    CalendarAccountOut,
+    CalendarEventCreate,
+    CalendarEventOut,
+)
 from app.core.config import settings
 from app.services.summarization.meeting_summarizer import MeetingSummarizer
 from app.services.summarization.meeting_summarizer import REGENERATABLE_SECTIONS
@@ -198,6 +207,45 @@ def saved_view_out(view: MeetingSavedView) -> MeetingSavedViewOut:
     )
 
 
+def calendar_account_out(account: CalendarAccount) -> CalendarAccountOut:
+    return CalendarAccountOut(
+        id=account.id,
+        workspace_id=account.workspace_id,
+        provider=account.provider,
+        account_email=account.account_email,
+        display_name=account.display_name,
+        status=account.status,
+        scopes=account.scopes_json or [],
+        provider_metadata=account.provider_metadata_json or {},
+        connected_at=account.connected_at,
+        last_sync_at=account.last_sync_at,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+    )
+
+
+def calendar_event_out(event: CalendarEvent) -> CalendarEventOut:
+    return CalendarEventOut(
+        id=event.id,
+        workspace_id=event.workspace_id,
+        calendar_account_id=event.calendar_account_id,
+        external_event_id=event.external_event_id,
+        title=event.title,
+        starts_at=event.starts_at,
+        ends_at=event.ends_at,
+        organizer_email=event.organizer_email,
+        meeting_url=event.meeting_url,
+        location=event.location,
+        description=event.description,
+        attendees=event.attendees_json or [],
+        artifacts=event.artifacts_json or [],
+        imported_meeting_id=event.imported_meeting_id,
+        raw=event.raw_json or {},
+        created_at=event.created_at,
+        updated_at=event.updated_at,
+    )
+
+
 def sync_generated_action_items(
     db: Session, meeting_id: int, summary: MeetingSummarySchema
 ) -> None:
@@ -328,6 +376,100 @@ def delete_meeting_saved_view(view_id: int, db: Session = Depends(get_db)):
     db.delete(view)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/calendar/accounts", response_model=list[CalendarAccountOut])
+def list_calendar_accounts(
+    workspace_id: int = 1,
+    include_disconnected: bool = False,
+    db: Session = Depends(get_db),
+):
+    query = db.query(CalendarAccount).filter(CalendarAccount.workspace_id == workspace_id)
+    if not include_disconnected:
+        query = query.filter(CalendarAccount.status != "disconnected")
+    accounts = query.order_by(CalendarAccount.created_at.desc(), CalendarAccount.id.desc()).all()
+    return [calendar_account_out(account) for account in accounts]
+
+
+@router.post("/calendar/accounts", response_model=CalendarAccountOut)
+def create_calendar_account(
+    payload: CalendarAccountCreate,
+    db: Session = Depends(get_db),
+):
+    account = CalendarAccount(
+        workspace_id=payload.workspace_id,
+        provider=payload.provider,
+        account_email=payload.account_email,
+        display_name=payload.display_name.strip()[:255] if payload.display_name else None,
+        status="connected",
+        scopes_json=payload.scopes,
+        provider_metadata_json=payload.provider_metadata,
+    )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return calendar_account_out(account)
+
+
+@router.post("/calendar/accounts/{account_id}/disconnect", response_model=CalendarAccountOut)
+def disconnect_calendar_account(account_id: int, db: Session = Depends(get_db)):
+    account = db.get(CalendarAccount, account_id)
+    if not account:
+        raise HTTPException(404)
+    account.status = "disconnected"
+    db.commit()
+    db.refresh(account)
+    return calendar_account_out(account)
+
+
+@router.get("/calendar/events", response_model=list[CalendarEventOut])
+def list_calendar_events(
+    workspace_id: int = 1,
+    calendar_account_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(CalendarEvent).filter(CalendarEvent.workspace_id == workspace_id)
+    if calendar_account_id:
+        query = query.filter(CalendarEvent.calendar_account_id == calendar_account_id)
+    events = query.order_by(CalendarEvent.starts_at.desc(), CalendarEvent.id.desc()).all()
+    return [calendar_event_out(event) for event in events]
+
+
+@router.post("/calendar/events", response_model=CalendarEventOut)
+def import_calendar_event(
+    payload: CalendarEventCreate,
+    db: Session = Depends(get_db),
+):
+    account = db.get(CalendarAccount, payload.calendar_account_id)
+    if not account or account.status == "disconnected":
+        raise HTTPException(404, "Connected calendar account not found")
+
+    event = CalendarEvent(
+        workspace_id=account.workspace_id,
+        calendar_account_id=account.id,
+        external_event_id=payload.external_event_id,
+        title=payload.title[:255],
+        starts_at=payload.starts_at,
+        ends_at=payload.ends_at,
+        organizer_email=payload.organizer_email,
+        meeting_url=payload.meeting_url,
+        location=payload.location,
+        description=payload.description,
+        attendees_json=payload.attendees,
+        artifacts_json=payload.artifacts,
+        raw_json=payload.raw,
+    )
+    db.add(event)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "Calendar event already exists for this account and external event ID.",
+        )
+    db.refresh(event)
+    return calendar_event_out(event)
 
 
 @router.get("/search", response_model=list[SearchResultOut])

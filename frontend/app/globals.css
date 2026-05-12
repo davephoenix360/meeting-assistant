@@ -801,6 +801,46 @@ h3 {
   padding-right: 6px;
 }
 
+.calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+
+.calendar-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.calendar-form .button {
+  align-self: end;
+}
+
+.calendar-account-list,
+.calendar-event-list {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-account,
+.calendar-event {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 14px;
+}
+
 .summary-panel {
   background:
     linear-gradient(135deg, rgba(219, 234, 254, 0.52), transparent 64%),
@@ -1359,6 +1399,8 @@ h3 {
   .form-grid,
   .form-grid.two-plus-one,
   .filter-bar,
+  .calendar-layout,
+  .calendar-form,
   .library-filter-form,
   .search-form {
     grid-template-columns: 1fr;
