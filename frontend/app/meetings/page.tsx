@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { api } from "../../lib/api";
+import { SavedViewsClient } from "./SavedViewsClient";
 import {
   meetingFiltersHref,
-  SavedViewsClient,
   type MeetingFilters,
   type SavedMeetingView,
-} from "./SavedViewsClient";
+} from "./filters";
 
 type Meeting = {
   id: number;
