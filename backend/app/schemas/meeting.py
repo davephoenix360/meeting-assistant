@@ -78,3 +78,12 @@ class ActionItemOut(BaseModel):
     status: str
     evidence: str
     created_at: datetime
+
+
+class SearchResultOut(BaseModel):
+    kind: str
+    meeting_id: int
+    meeting_title: str
+    title: str
+    excerpt: str
+    status: str | None = None

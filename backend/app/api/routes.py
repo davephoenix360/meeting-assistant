@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
+from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from app.db.session import get_db
@@ -13,6 +14,7 @@ from app.schemas.meeting import (
     ActionItemCreate,
     ActionItemUpdate,
     ActionItemOut,
+    SearchResultOut,
 )
 from app.schemas.summary import MeetingSummarySchema
 from app.core.config import settings
@@ -42,6 +44,25 @@ def action_item_out(item: ActionItem, meeting_title: str) -> ActionItemOut:
     )
 
 
+def search_excerpt(text: str | None, query: str, *, max_length: int = 180) -> str:
+    if not text:
+        return ""
+
+    normalized = text.replace("\n", " ").strip()
+    if not normalized:
+        return ""
+
+    index = normalized.lower().find(query.lower())
+    if index < 0:
+        return normalized[:max_length]
+
+    start = max(0, index - 48)
+    end = min(len(normalized), index + len(query) + 132)
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(normalized) else ""
+    return f"{prefix}{normalized[start:end]}{suffix}"
+
+
 @router.post("/meetings", response_model=MeetingOut)
 def create_meeting(payload: MeetingCreate, db: Session = Depends(get_db)):
     meeting = Meeting(**payload.model_dump())
@@ -54,6 +75,97 @@ def create_meeting(payload: MeetingCreate, db: Session = Depends(get_db)):
 @router.get("/meetings", response_model=list[MeetingOut])
 def list_meetings(db: Session = Depends(get_db)):
     return db.query(Meeting).order_by(Meeting.id.desc()).all()
+
+
+@router.get("/search", response_model=list[SearchResultOut])
+def search(q: str, db: Session = Depends(get_db)):
+    query = q.strip()
+    if not query:
+        return []
+
+    pattern = f"%{query}%"
+    results: list[SearchResultOut] = []
+
+    meetings = (
+        db.query(Meeting)
+        .filter(
+            or_(
+                Meeting.title.ilike(pattern),
+                Meeting.transcript_text.ilike(pattern),
+            )
+        )
+        .order_by(Meeting.updated_at.desc(), Meeting.id.desc())
+        .limit(20)
+        .all()
+    )
+    for meeting in meetings:
+        title_match = query.lower() in meeting.title.lower()
+        results.append(
+            SearchResultOut(
+                kind="meeting",
+                meeting_id=meeting.id,
+                meeting_title=meeting.title,
+                title=meeting.title if title_match else "Transcript match",
+                excerpt=(
+                    meeting.title
+                    if title_match
+                    else search_excerpt(meeting.transcript_text, query)
+                ),
+                status=meeting.status.value if hasattr(meeting.status, "value") else str(meeting.status),
+            )
+        )
+
+    summaries = (
+        db.query(MeetingAIOutput, Meeting.title.label("meeting_title"))
+        .join(Meeting, MeetingAIOutput.meeting_id == Meeting.id)
+        .filter(cast(MeetingAIOutput.summary_json, String).ilike(pattern))
+        .order_by(MeetingAIOutput.updated_at.desc(), MeetingAIOutput.id.desc())
+        .limit(20)
+        .all()
+    )
+    for output, meeting_title in summaries:
+        summary_text = str(output.summary_json)
+        results.append(
+            SearchResultOut(
+                kind="summary",
+                meeting_id=output.meeting_id,
+                meeting_title=meeting_title,
+                title="AI notes match",
+                excerpt=search_excerpt(summary_text, query),
+                status=None,
+            )
+        )
+
+    action_items = (
+        db.query(ActionItem, Meeting.title.label("meeting_title"))
+        .join(Meeting, ActionItem.meeting_id == Meeting.id)
+        .filter(
+            or_(
+                ActionItem.task.ilike(pattern),
+                ActionItem.owner.ilike(pattern),
+                ActionItem.evidence.ilike(pattern),
+            )
+        )
+        .order_by(ActionItem.created_at.desc(), ActionItem.id.desc())
+        .limit(20)
+        .all()
+    )
+    for item, meeting_title in action_items:
+        haystack = " ".join(
+            value for value in [item.task, item.owner, item.evidence] if value
+        )
+        results.append(
+            SearchResultOut(
+                kind="action",
+                meeting_id=item.meeting_id,
+                meeting_title=meeting_title,
+                title=item.task,
+                excerpt=search_excerpt(haystack, query),
+                status=item.status,
+            )
+        )
+
+    return results[:50]
 
 
 @router.get("/meetings/{meeting_id}", response_model=MeetingOut)

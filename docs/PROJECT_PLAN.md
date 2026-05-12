@@ -60,6 +60,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Uploaded recordings can be converted into a placeholder transcript until a real transcription provider is connected.
 - Local Whisper transcription provider is scaffolded behind the transcription provider abstraction for free, local speech-to-text.
 - Transcript provenance metadata is persisted and displayed for pasted and transcribed meetings.
+- Workspace search spans meetings, transcripts, AI summaries, and action items.
 - OpenRouter provider implementation exists.
 - LLM provider resolution is moving toward a factory-based abstraction.
 - Cross-meeting action item workspace supports manual creation, status/owner/due filters, sorting, overdue indicators, completion toggles, and inline edits.
@@ -93,7 +94,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 ### Phase 3: Meeting Library And Memory
 
 - [x] Meeting library page.
-- [ ] Search meetings by title, transcript, summary, and action text.
+- [x] Search meetings by title, transcript, summary, and action text.
 - [ ] Add meeting tags.
 - [ ] Add saved views or filters.
 - [ ] Add related meetings / memory recall.
@@ -133,7 +134,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add search across meetings, summaries, transcripts, and action items.
-2. Add action item deletion or archiving.
-3. Add summary quality checks and better error recovery.
-4. Add regenerate individual summary sections.
+1. Add action item deletion or archiving.
+2. Add summary quality checks and better error recovery.
+3. Add regenerate individual summary sections.
+4. Add meeting tags.
