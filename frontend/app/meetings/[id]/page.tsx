@@ -72,6 +72,17 @@ type AIOutput = {
   quality_json?: QualityReport | null;
 };
 
+type RelatedMeeting = {
+  meeting_id: number;
+  meeting_title: string;
+  status: string;
+  source_type: string;
+  tags: string[];
+  score: number;
+  reasons: string[];
+  excerpt: string;
+};
+
 type EditableSummaryField =
   | "executive_summary"
   | "key_points"
@@ -167,6 +178,7 @@ function draftToTags(value: string) {
 export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [output, setOutput] = useState<AIOutput | null>(null);
+  const [relatedMeetings, setRelatedMeetings] = useState<RelatedMeeting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -189,6 +201,14 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       setOutput(await getJson<AIOutput>(`/meetings/${params.id}/ai-output`));
     } catch {
       setOutput(null);
+    }
+
+    try {
+      setRelatedMeetings(
+        await getJson<RelatedMeeting[]>(`/meetings/${params.id}/related`),
+      );
+    } catch {
+      setRelatedMeetings([]);
     }
   }, [params.id]);
 
@@ -819,6 +839,51 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
               </div>
             ) : (
               <p className="helper">No tags saved for this meeting.</p>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="section-heading compact">
+              <div>
+                <p className="eyebrow">Memory</p>
+                <h3>Related meetings</h3>
+              </div>
+            </div>
+            {relatedMeetings.length ? (
+              <div className="related-list">
+                {relatedMeetings.map((related) => (
+                  <Link
+                    className="related-item"
+                    href={`/meetings/${related.meeting_id}`}
+                    key={related.meeting_id}
+                  >
+                    <div className="related-heading">
+                      <strong>{related.meeting_title}</strong>
+                      <span className={`status ${related.status}`}>
+                        {statusCopy[related.status] || related.status}
+                      </span>
+                    </div>
+                    <p className="helper">{related.excerpt}</p>
+                    <div className="meta-row">
+                      {related.reasons.map((reason) => (
+                        <span className="pill" key={reason}>
+                          {reason}
+                        </span>
+                      ))}
+                      {related.tags.slice(0, 2).map((tag) => (
+                        <span className="pill tag-pill" key={tag}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="helper">
+                Related meetings will appear as tags, summaries, transcripts, and
+                action items accumulate.
+              </p>
             )}
           </section>
 

@@ -121,3 +121,14 @@ class SearchResultOut(BaseModel):
     title: str
     excerpt: str
     status: str | None = None
+
+
+class RelatedMeetingOut(BaseModel):
+    meeting_id: int
+    meeting_title: str
+    status: str
+    source_type: str
+    tags: list[str] = Field(default_factory=list)
+    score: int
+    reasons: list[str]
+    excerpt: str

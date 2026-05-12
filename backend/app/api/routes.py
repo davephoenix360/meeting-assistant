@@ -26,6 +26,7 @@ from app.schemas.meeting import (
     ActionItemUpdate,
     ActionItemOut,
     SearchResultOut,
+    RelatedMeetingOut,
 )
 from app.schemas.summary import MeetingSummarySchema
 from app.core.config import settings
@@ -38,8 +39,35 @@ from app.services.llm.factory import get_llm_provider
 from app.services.transcription.base import TranscriptionProviderError
 from app.services.transcription.factory import get_transcription_provider
 import os
+import re
 
 router = APIRouter(prefix="/api")
+
+STOPWORDS = {
+    "about",
+    "after",
+    "again",
+    "also",
+    "because",
+    "been",
+    "before",
+    "being",
+    "from",
+    "have",
+    "into",
+    "meeting",
+    "next",
+    "notes",
+    "that",
+    "their",
+    "there",
+    "they",
+    "this",
+    "with",
+    "will",
+    "would",
+    "your",
+}
 
 
 def action_item_out(item: ActionItem, meeting_title: str) -> ActionItemOut:
@@ -106,6 +134,54 @@ def normalize_meeting_filters(filters: dict | None) -> dict:
     if tag_values:
         normalized["tag"] = tag_values[0]
     return normalized
+
+
+def memory_terms(text: str | None, *, limit: int = 90) -> set[str]:
+    if not text:
+        return set()
+
+    terms: list[str] = []
+    for term in re.findall(r"[a-zA-Z][a-zA-Z0-9-]{3,}", text.lower()):
+        if term not in STOPWORDS:
+            terms.append(term)
+    return set(terms[:limit])
+
+
+def meeting_status_value(meeting: Meeting) -> str:
+    return meeting.status.value if hasattr(meeting.status, "value") else str(meeting.status)
+
+
+def meeting_source_value(meeting: Meeting) -> str:
+    return (
+        meeting.source_type.value
+        if hasattr(meeting.source_type, "value")
+        else str(meeting.source_type)
+    )
+
+
+def meeting_memory_blob(
+    meeting: Meeting,
+    output: MeetingAIOutput | None,
+    action_items: list[ActionItem],
+) -> str:
+    parts = [
+        meeting.title,
+        " ".join(normalize_tags(meeting.tags)),
+        meeting.transcript_text or "",
+    ]
+    if output:
+        parts.append(str(output.summary_json))
+    for item in action_items:
+        parts.extend([item.task, item.owner or "", item.evidence or ""])
+    return " ".join(parts)
+
+
+def related_excerpt(meeting: Meeting, output: MeetingAIOutput | None) -> str:
+    if output and isinstance(output.summary_json, dict):
+        summary = output.summary_json.get("executive_summary")
+        if summary:
+            return str(summary)[:220]
+    return search_excerpt(meeting.transcript_text, meeting.title, max_length=220) or meeting.title
 
 
 def saved_view_out(view: MeetingSavedView) -> MeetingSavedViewOut:
@@ -338,6 +414,94 @@ def get_meeting(meeting_id: int, db: Session = Depends(get_db)):
     if not meeting:
         raise HTTPException(404)
     return meeting
+
+
+@router.get("/meetings/{meeting_id}/related", response_model=list[RelatedMeetingOut])
+def related_meetings(
+    meeting_id: int,
+    limit: int = 6,
+    db: Session = Depends(get_db),
+):
+    meeting = db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(404)
+
+    limit = max(1, min(limit, 12))
+    all_meetings = db.query(Meeting).filter(Meeting.id != meeting_id).all()
+    meeting_ids = [candidate.id for candidate in all_meetings] + [meeting_id]
+    outputs = {
+        output.meeting_id: output
+        for output in db.query(MeetingAIOutput)
+        .filter(MeetingAIOutput.meeting_id.in_(meeting_ids))
+        .all()
+    }
+    action_items_by_meeting: dict[int, list[ActionItem]] = {
+        next_id: [] for next_id in meeting_ids
+    }
+    for item in (
+        db.query(ActionItem)
+        .filter(ActionItem.meeting_id.in_(meeting_ids))
+        .filter(ActionItem.archived_at.is_(None))
+        .all()
+    ):
+        action_items_by_meeting.setdefault(item.meeting_id, []).append(item)
+
+    current_tags = set(normalize_tags(meeting.tags))
+    current_terms = memory_terms(
+        meeting_memory_blob(
+            meeting,
+            outputs.get(meeting.id),
+            action_items_by_meeting.get(meeting.id, []),
+        )
+    )
+    current_title_terms = memory_terms(meeting.title, limit=12)
+    current_source = meeting_source_value(meeting)
+
+    related: list[RelatedMeetingOut] = []
+    for candidate in all_meetings:
+        candidate_tags = set(normalize_tags(candidate.tags))
+        candidate_blob = meeting_memory_blob(
+            candidate,
+            outputs.get(candidate.id),
+            action_items_by_meeting.get(candidate.id, []),
+        )
+        candidate_terms = memory_terms(candidate_blob)
+        candidate_title_terms = memory_terms(candidate.title, limit=12)
+
+        shared_tags = sorted(current_tags & candidate_tags)
+        shared_title_terms = sorted(current_title_terms & candidate_title_terms)
+        shared_terms = sorted((current_terms & candidate_terms) - set(shared_title_terms))
+
+        score = 0
+        reasons: list[str] = []
+        if shared_tags:
+            score += min(45, len(shared_tags) * 22)
+            reasons.append(f"Shared tag: {shared_tags[0]}")
+        if shared_title_terms:
+            score += min(24, len(shared_title_terms) * 8)
+            reasons.append(f"Title overlap: {shared_title_terms[0]}")
+        if shared_terms:
+            score += min(36, len(shared_terms) * 3)
+            reasons.append("Shared context: " + ", ".join(shared_terms[:3]))
+        if score and meeting_source_value(candidate) == current_source:
+            score += 3
+            reasons.append(f"Same source: {current_source}")
+
+        if score:
+            related.append(
+                RelatedMeetingOut(
+                    meeting_id=candidate.id,
+                    meeting_title=candidate.title,
+                    status=meeting_status_value(candidate),
+                    source_type=meeting_source_value(candidate),
+                    tags=normalize_tags(candidate.tags),
+                    score=score,
+                    reasons=reasons[:4],
+                    excerpt=related_excerpt(candidate, outputs.get(candidate.id)),
+                )
+            )
+
+    return sorted(related, key=lambda item: item.score, reverse=True)[:limit]
 
 
 @router.post("/meetings/{meeting_id}/upload")

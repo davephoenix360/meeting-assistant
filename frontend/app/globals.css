@@ -856,6 +856,36 @@ h3 {
   background: var(--rose-soft);
 }
 
+.related-list {
+  display: grid;
+  gap: 10px;
+}
+
+.related-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.related-item:hover {
+  border-color: var(--blue);
+  background: #ffffff;
+}
+
+.related-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.related-heading strong {
+  line-height: 1.35;
+}
+
 .summary-edit-form {
   display: grid;
   gap: 12px;

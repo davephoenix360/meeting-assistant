@@ -39,6 +39,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Store provider and model metadata for every AI output.
 - Use structured JSON output where supported.
 - Validate model output with Pydantic before persisting.
+- For long transcripts, prefer a sequential Refine strategy with overlap and entity/action tracking for narrative cohesion. Use Map-Reduce only for very large or batch workflows where latency matters more than continuity.
 - Keep meeting-source integrations behind source-specific service boundaries.
 - Prefer transcript-first and artifact-first workflows before live capture.
 - Keep MVP background processing simple, but leave room for a queue later.
@@ -59,6 +60,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Meeting detail supports regenerating individual AI-generated sections without reprocessing the whole meeting.
 - Meetings support user-managed tags for library filtering and search.
 - Meeting library supports reusable saved filter views.
+- Meeting detail recalls related meetings from tags, summaries, transcripts, and action items.
 - New meeting flow supports audio/video upload intake against the backend upload endpoint.
 - Uploaded recordings can be converted into a placeholder transcript until a real transcription provider is connected.
 - Local Whisper transcription provider is scaffolded behind the transcription provider abstraction for free, local speech-to-text.
@@ -83,6 +85,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Edit generated notes before export.
 - [x] Add summary quality checks and better error recovery.
 - [x] Regenerate individual sections.
+- [ ] Add long-transcript Refine processing with overlap and entity/action tracking.
 
 ### Phase 2: Action Item Workspace
 
@@ -102,7 +105,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Search meetings by title, transcript, summary, and action text.
 - [x] Add meeting tags.
 - [x] Add saved views or filters.
-- [ ] Add related meetings / memory recall.
+- [x] Add related meetings / memory recall.
 
 ### Phase 4: Audio/Video Transcription
 
@@ -139,7 +142,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add related meetings / memory recall.
+1. Add long-transcript Refine processing with overlap and entity/action tracking.
 2. Add calendar account model.
 3. Add calendar event import.
 4. Attach imported artifacts to meetings.
