@@ -12,6 +12,12 @@ type Meeting = {
   transcript_text?: string | null;
   audio_file_path?: string | null;
   video_file_path?: string | null;
+  transcript_source?: string | null;
+  transcript_provider?: string | null;
+  transcript_model?: string | null;
+  transcript_language?: string | null;
+  transcript_confidence?: string | null;
+  transcript_created_at?: string | null;
 };
 
 type Decision = {
@@ -496,6 +502,27 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                 <h3>Transcript</h3>
               </div>
             </div>
+            {meeting.transcript_text ? (
+              <div className="meta-row transcript-meta">
+                <span className="pill">
+                  Source: {meeting.transcript_source || "unknown"}
+                </span>
+                <span className="pill">
+                  Provider: {meeting.transcript_provider || "unknown"}
+                </span>
+                {meeting.transcript_model ? (
+                  <span className="pill">Model: {meeting.transcript_model}</span>
+                ) : null}
+                {meeting.transcript_language ? (
+                  <span className="pill">Language: {meeting.transcript_language}</span>
+                ) : null}
+                {meeting.transcript_confidence ? (
+                  <span className="pill">
+                    Confidence: {meeting.transcript_confidence}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             <div className="transcript">
               {meeting.transcript_text ||
                 (hasUploadedMedia

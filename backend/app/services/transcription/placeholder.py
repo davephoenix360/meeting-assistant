@@ -13,4 +13,9 @@ class PlaceholderTranscriptionProvider(TranscriptionProvider):
             "Replace this placeholder with a real transcription provider output "
             "before using the meeting for final AI notes."
         )
-        return TranscriptResult(text=text, language=language)
+        return TranscriptResult(
+            text=text,
+            language=language,
+            confidence=None,
+            model="placeholder",
+        )

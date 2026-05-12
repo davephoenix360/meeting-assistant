@@ -22,6 +22,12 @@ class MeetingOut(BaseModel):
     transcript_text: str | None
     audio_file_path: str | None = None
     video_file_path: str | None = None
+    transcript_source: str | None = None
+    transcript_provider: str | None = None
+    transcript_model: str | None = None
+    transcript_language: str | None = None
+    transcript_confidence: str | None = None
+    transcript_created_at: datetime | None = None
 
     class Config:
         from_attributes = True

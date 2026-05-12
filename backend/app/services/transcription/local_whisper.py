@@ -45,4 +45,10 @@ class LocalWhisperTranscriptionProvider(TranscriptionProvider):
         )
         segments, info = model.transcribe(file_path, language=language)
         text = "\n".join(segment.text.strip() for segment in segments if segment.text)
-        return TranscriptResult(text=text.strip(), language=getattr(info, "language", language))
+        probability = getattr(info, "language_probability", None)
+        return TranscriptResult(
+            text=text.strip(),
+            language=getattr(info, "language", language),
+            confidence=probability,
+            model=self.model_size,
+        )

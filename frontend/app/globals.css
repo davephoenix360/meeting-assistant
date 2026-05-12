@@ -805,6 +805,10 @@ h3 {
   gap: 8px;
 }
 
+.transcript-meta {
+  margin-bottom: 12px;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

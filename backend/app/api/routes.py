@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 from app.db.session import get_db
 from app.models.models import Meeting, MeetingStatus, MeetingAIOutput, ActionItem
 from app.schemas.meeting import (
@@ -92,6 +93,12 @@ def set_transcript(
     if not meeting:
         raise HTTPException(404)
     meeting.transcript_text = payload.transcript_text
+    meeting.transcript_source = "paste"
+    meeting.transcript_provider = "manual"
+    meeting.transcript_model = None
+    meeting.transcript_language = None
+    meeting.transcript_confidence = None
+    meeting.transcript_created_at = func.now()
     meeting.status = MeetingStatus.transcribed
     db.commit()
     db.refresh(meeting)
@@ -121,6 +128,14 @@ async def transcribe_meeting(meeting_id: int, db: Session = Depends(get_db)):
     try:
         result = await provider.transcribe(file_path)
         meeting.transcript_text = result.text
+        meeting.transcript_source = "upload"
+        meeting.transcript_provider = provider_name
+        meeting.transcript_model = result.model
+        meeting.transcript_language = result.language
+        meeting.transcript_confidence = (
+            f"{result.confidence:.4f}" if result.confidence is not None else None
+        )
+        meeting.transcript_created_at = func.now()
         meeting.status = MeetingStatus.transcribed
         db.commit()
         db.refresh(meeting)

@@ -59,6 +59,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - New meeting flow supports audio/video upload intake against the backend upload endpoint.
 - Uploaded recordings can be converted into a placeholder transcript until a real transcription provider is connected.
 - Local Whisper transcription provider is scaffolded behind the transcription provider abstraction for free, local speech-to-text.
+- Transcript provenance metadata is persisted and displayed for pasted and transcribed meetings.
 - OpenRouter provider implementation exists.
 - LLM provider resolution is moving toward a factory-based abstraction.
 - Cross-meeting action item workspace supports manual creation, status/owner/due filters, sorting, overdue indicators, completion toggles, and inline edits.
@@ -103,7 +104,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Upload UI.
 - [x] Local placeholder transcription path.
 - [x] Real transcription provider abstraction.
-- [ ] Persist transcript provenance and confidence metadata.
+- [x] Persist transcript provenance and confidence metadata.
 
 ### Phase 5: Calendar And Artifact Integrations
 
@@ -132,7 +133,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Persist transcript provenance and confidence metadata.
-2. Add search across meetings, summaries, transcripts, and action items.
-3. Add action item deletion or archiving.
-4. Add summary quality checks and better error recovery.
+1. Add search across meetings, summaries, transcripts, and action items.
+2. Add action item deletion or archiving.
+3. Add summary quality checks and better error recovery.
+4. Add regenerate individual summary sections.
