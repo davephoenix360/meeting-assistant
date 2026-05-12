@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { API_BASE_URL } from "../../../lib/api";
 
 type CreatedMeeting = {
@@ -9,6 +9,19 @@ type CreatedMeeting = {
 };
 
 type InputMode = "transcript" | "upload";
+
+type TranscriptionStatus = {
+  provider: string;
+  mode: string;
+  ready: boolean;
+  can_transcribe: boolean;
+  label: string;
+  message: string;
+  model?: string | null;
+  device?: string | null;
+  compute_type?: string | null;
+  package_installed?: boolean | null;
+};
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -31,8 +44,25 @@ export default function NewMeeting() {
   const [inputMode, setInputMode] = useState<InputMode>("transcript");
   const [transcript, setTranscript] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [transcriptionStatus, setTranscriptionStatus] =
+    useState<TranscriptionStatus | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function loadTranscriptionStatus() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/transcription/status`);
+        if (response.ok) {
+          setTranscriptionStatus((await response.json()) as TranscriptionStatus);
+        }
+      } catch {
+        setTranscriptionStatus(null);
+      }
+    }
+
+    void loadTranscriptionStatus();
+  }, []);
 
   const transcriptStats = useMemo(() => {
     const trimmed = transcript.trim();
@@ -112,7 +142,7 @@ export default function NewMeeting() {
           <h2>Create meeting</h2>
           <p className="lead">
             Add a pasted transcript for immediate AI notes, or upload audio/video
-            now and transcribe it in the next product phase.
+            and transcribe it with the configured backend provider.
           </p>
         </div>
         <div className="actions">
@@ -204,7 +234,8 @@ export default function NewMeeting() {
                 type="file"
               />
               <span className="helper">
-                This saves the original recording. Transcription is the next phase.
+                This saves the original recording. Provider status is shown in the
+                intake panel before upload.
               </span>
             </label>
           )}
@@ -276,6 +307,13 @@ export default function NewMeeting() {
                   <p className="eyebrow">Upload check</p>
                   <h3>Recording intake</h3>
                 </div>
+                <span
+                  className={`status ${
+                    transcriptionStatus?.can_transcribe ? "completed" : "uploaded"
+                  }`}
+                >
+                  {transcriptionStatus?.label || "Checking provider"}
+                </span>
               </div>
 
               <div className="stat-pair">
@@ -292,13 +330,23 @@ export default function NewMeeting() {
               <ul className="check-list" aria-label="Upload preparation checklist">
                 <li className={title.trim() ? "complete" : ""}>Meeting title added</li>
                 <li className={file ? "complete" : ""}>Recording selected</li>
-                <li>Transcription provider pending</li>
+                <li className={transcriptionStatus?.can_transcribe ? "complete" : ""}>
+                  {transcriptionStatus?.can_transcribe
+                    ? "Real transcription available"
+                    : "Placeholder transcription mode"}
+                </li>
               </ul>
 
               <p className="footer-note">
-                Uploaded recordings are stored on the backend and marked as uploaded.
-                The transcription provider will be connected next.
+                {transcriptionStatus?.message ||
+                  "Checking the backend transcription provider."}
               </p>
+              {transcriptionStatus?.can_transcribe ? (
+                <p className="footer-note">
+                  Model: {transcriptionStatus.model || "default"} / Device:{" "}
+                  {transcriptionStatus.device || "auto"}
+                </p>
+              ) : null}
             </>
           )}
         </aside>

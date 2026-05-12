@@ -58,13 +58,15 @@ Do not make the architecture dependent on one meeting platform or one AI provide
   - export Markdown
 - Meeting detail supports editing core generated summary sections before export.
 - Meeting detail supports regenerating individual AI-generated sections without reprocessing the whole meeting.
+- Meeting detail keeps long generated action-item lists inside a scrollable panel.
 - Long transcripts are processed with sequential Refine chunking, overlap, and entity/action tracking before final structured note generation.
 - Meetings support user-managed tags for library filtering and search.
 - Meeting library supports reusable saved filter views.
 - Meeting detail recalls related meetings from tags, summaries, transcripts, and action items.
 - New meeting flow supports audio/video upload intake against the backend upload endpoint.
-- Uploaded recordings can be converted into a placeholder transcript until a real transcription provider is connected.
+- Uploaded recordings can be transcribed through the active provider, with placeholder mode clearly marked.
 - Local Whisper transcription provider is scaffolded behind the transcription provider abstraction for free, local speech-to-text.
+- The frontend can show active transcription provider status before upload and on settings/detail screens.
 - Transcript provenance metadata is persisted and displayed for pasted and transcribed meetings.
 - Workspace search spans meetings, transcripts, AI summaries, and action items.
 - OpenRouter provider implementation exists.
@@ -115,6 +117,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Local placeholder transcription path.
 - [x] Real transcription provider abstraction.
 - [x] Persist transcript provenance and confidence metadata.
+- [x] Add transcription provider status endpoint and UI state.
 
 ### Phase 5: Calendar And Artifact Integrations
 

@@ -92,6 +92,19 @@ type RelatedMeeting = {
   excerpt: string;
 };
 
+type TranscriptionStatus = {
+  provider: string;
+  mode: string;
+  ready: boolean;
+  can_transcribe: boolean;
+  label: string;
+  message: string;
+  model?: string | null;
+  device?: string | null;
+  compute_type?: string | null;
+  package_installed?: boolean | null;
+};
+
 type EditableSummaryField =
   | "executive_summary"
   | "key_points"
@@ -188,6 +201,8 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [output, setOutput] = useState<AIOutput | null>(null);
   const [relatedMeetings, setRelatedMeetings] = useState<RelatedMeeting[]>([]);
+  const [transcriptionStatus, setTranscriptionStatus] =
+    useState<TranscriptionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -218,6 +233,14 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       );
     } catch {
       setRelatedMeetings([]);
+    }
+
+    try {
+      setTranscriptionStatus(
+        await getJson<TranscriptionStatus>("/transcription/status"),
+      );
+    } catch {
+      setTranscriptionStatus(null);
     }
   }, [params.id]);
 
@@ -432,6 +455,10 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const canProcess = Boolean(meeting.transcript_text);
   const canRegenerate = Boolean(output && meeting.transcript_text);
   const hasUploadedMedia = Boolean(meeting.audio_file_path || meeting.video_file_path);
+  const canRealTranscribe = Boolean(transcriptionStatus?.can_transcribe);
+  const transcriptionActionLabel = canRealTranscribe
+    ? "Transcribe recording"
+    : "Create placeholder transcript";
   const summaryStats = [
     { label: "Key points", value: summary?.key_points?.length ?? 0 },
     { label: "Actions", value: summary?.action_items?.length ?? 0 },
@@ -499,8 +526,8 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
             <p className="eyebrow">Recording uploaded</p>
             <h3>{meeting.audio_file_path ? "Audio file attached" : "Video file attached"}</h3>
             <p className="helper">
-              The recording is saved. Create a placeholder transcript now, then
-              replace it with real provider output when transcription is connected.
+              {transcriptionStatus?.message ||
+                "The recording is saved. Checking the backend transcription provider."}
             </p>
           </div>
           <div className="actions">
@@ -510,9 +537,11 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
               onClick={() => void transcribeMeeting()}
               type="button"
             >
-              {isTranscribing ? "Transcribing..." : "Create placeholder transcript"}
+              {isTranscribing ? "Transcribing..." : transcriptionActionLabel}
             </button>
-            <span className="status uploaded">Awaiting transcription</span>
+            <span className={`status ${canRealTranscribe ? "completed" : "uploaded"}`}>
+              {transcriptionStatus?.label || "Awaiting transcription"}
+            </span>
           </div>
         </section>
       ) : null}
@@ -963,7 +992,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
               ) : null}
             </div>
             {summary?.action_items?.length ? (
-              <div className="section-stack">
+              <div className="section-stack action-scroll-list">
                 {summary.action_items.map((item, index) => (
                   <div className="action-item" key={`${item.task}-${index}`}>
                     <strong>{item.task}</strong>

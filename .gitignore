@@ -42,6 +42,7 @@ alembic/*.log
 *.sqlite
 *.sqlite3
 *.db
+backend/storage/
 
 # --- Node / Next.js (frontend) ---
 node_modules/

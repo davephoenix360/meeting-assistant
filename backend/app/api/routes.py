@@ -27,6 +27,7 @@ from app.schemas.meeting import (
     ActionItemOut,
     SearchResultOut,
     RelatedMeetingOut,
+    TranscriptionProviderStatusOut,
 )
 from app.schemas.summary import MeetingSummarySchema
 from app.core.config import settings
@@ -37,7 +38,10 @@ from app.jobs.process_meeting import process_meeting
 from app.services.llm.base import LLMProviderError
 from app.services.llm.factory import get_llm_provider
 from app.services.transcription.base import TranscriptionProviderError
-from app.services.transcription.factory import get_transcription_provider
+from app.services.transcription.factory import (
+    get_transcription_provider,
+    get_transcription_provider_status,
+)
 import os
 import re
 
@@ -522,6 +526,11 @@ def related_meetings(
             )
 
     return sorted(related, key=lambda item: item.score, reverse=True)[:limit]
+
+
+@router.get("/transcription/status", response_model=TranscriptionProviderStatusOut)
+def transcription_status():
+    return get_transcription_provider_status()
 
 
 @router.post("/meetings/{meeting_id}/upload")

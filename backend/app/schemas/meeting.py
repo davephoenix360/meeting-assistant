@@ -132,3 +132,16 @@ class RelatedMeetingOut(BaseModel):
     score: int
     reasons: list[str]
     excerpt: str
+
+
+class TranscriptionProviderStatusOut(BaseModel):
+    provider: str
+    mode: str
+    ready: bool
+    can_transcribe: bool
+    label: str
+    message: str
+    model: str | None = None
+    device: str | None = None
+    compute_type: str | None = None
+    package_installed: bool | None = None

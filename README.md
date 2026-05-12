@@ -41,5 +41,10 @@ npm run dev
 
 - OpenRouter API key can be supplied with `OPENROUTER_API_KEY`.
 - Long transcript processing switches to sequential Refine mode after `SUMMARIZATION_REFINE_THRESHOLD_CHARS` characters. Chunk and overlap sizes can be tuned with `SUMMARIZATION_REFINE_CHUNK_CHARS` and `SUMMARIZATION_REFINE_OVERLAP_CHARS`.
+- Audio/video uploads use `TRANSCRIPTION_PROVIDER`.
+  - `placeholder` saves the file and creates placeholder transcript text.
+  - `local_whisper` runs local speech-to-text with `faster-whisper`; install the optional package before enabling it.
+  - Tune local transcription with `LOCAL_WHISPER_MODEL`, `LOCAL_WHISPER_DEVICE`, and `LOCAL_WHISPER_COMPUTE_TYPE`.
+  - Check the active provider with `GET /api/transcription/status`.
 - Background jobs use a simple async task runner for MVP; Redis queue integration is scaffolded with TODO markers.
 - See `docs/04_MEETING_PLATFORM_ROADMAP.md` for Zoom/Meet/Teams roadmap constraints.

@@ -794,6 +794,13 @@ h3 {
   gap: 16px;
 }
 
+.action-scroll-list {
+  max-height: min(520px, 68vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+}
+
 .summary-panel {
   background:
     linear-gradient(135deg, rgba(219, 234, 254, 0.52), transparent 64%),
