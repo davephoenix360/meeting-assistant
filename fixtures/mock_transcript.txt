@@ -1,0 +1,5 @@
+PM: Let's launch beta on June 15. Alex will finalize onboarding copy by June 1.
+Engineering: We can deliver SSO in phase two; risk is API rate limits from a dependency.
+Sales: Need customer-ready one pager. Priya owns first draft by next Friday.
+Decision: Beta scope excludes enterprise billing automation.
+Open question: Should we require MFA at signup?
