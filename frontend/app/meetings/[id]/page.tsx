@@ -78,6 +78,16 @@ type EditableSummaryField =
   | "open_questions"
   | "follow_up_email";
 
+type RegeneratableSummaryField =
+  | "executive_summary"
+  | "key_points"
+  | "decisions"
+  | "action_items"
+  | "deliverables"
+  | "risks_blockers"
+  | "open_questions"
+  | "follow_up_email";
+
 const statusCopy: Record<string, string> = {
   created: "Draft",
   uploaded: "Uploaded",
@@ -151,6 +161,8 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [editingField, setEditingField] = useState<EditableSummaryField | null>(null);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [isSavingSummary, setIsSavingSummary] = useState(false);
+  const [regeneratingField, setRegeneratingField] =
+    useState<RegeneratableSummaryField | null>(null);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -265,6 +277,48 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
     }
   }
 
+  async function regenerateSummarySection(field: RegeneratableSummaryField) {
+    if (!output || regeneratingField) {
+      return;
+    }
+
+    setRegeneratingField(field);
+    setError("");
+    setMeeting((current) =>
+      current ? { ...current, status: "summarizing", processing_error: null } : current,
+    );
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/meetings/${params.id}/ai-output/summary/regenerate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ section: field }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await getApiErrorMessage(response));
+      }
+
+      setOutput((await response.json()) as AIOutput);
+      cancelSummaryEdit();
+      await refresh();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : `Unable to regenerate ${field}.`;
+      setError(message);
+      setMeeting((current) =>
+        current
+          ? { ...current, status: "failed", processing_error: message }
+          : current,
+      );
+    } finally {
+      setRegeneratingField(null);
+    }
+  }
+
   useEffect(() => {
     refresh()
       .catch((err) => {
@@ -293,6 +347,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const quality = output?.quality_json;
   const canExport = Boolean(output);
   const canProcess = Boolean(meeting.transcript_text);
+  const canRegenerate = Boolean(output && meeting.transcript_text);
   const hasUploadedMedia = Boolean(meeting.audio_file_path || meeting.video_file_path);
   const summaryStats = [
     { label: "Key points", value: summary?.key_points?.length ?? 0 },
@@ -385,18 +440,31 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                 <h3>Executive summary</h3>
               </div>
               {summary?.executive_summary ? (
-                <button
-                  className="button subtle compact-button"
-                  onClick={() =>
-                    startSummaryEdit(
-                      "executive_summary",
-                      summary.executive_summary || "",
-                    )
-                  }
-                  type="button"
-                >
-                  Edit
-                </button>
+                <div className="actions inline-actions section-tools">
+                  <button
+                    className="button subtle compact-button"
+                    disabled={regeneratingField === "executive_summary"}
+                    onClick={() =>
+                      startSummaryEdit(
+                        "executive_summary",
+                        summary.executive_summary || "",
+                      )
+                    }
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="button subtle compact-button"
+                    disabled={!canRegenerate || Boolean(regeneratingField)}
+                    onClick={() => void regenerateSummarySection("executive_summary")}
+                    type="button"
+                  >
+                    {regeneratingField === "executive_summary"
+                      ? "Regenerating..."
+                      : "Regenerate"}
+                  </button>
+                </div>
               ) : null}
             </div>
             {editingField === "executive_summary" ? (
@@ -434,17 +502,30 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
             )}
           </article>
 
-          {summary?.key_points?.length ? (
+          {summary ? (
             <article className="panel">
               <div className="section-heading compact">
                 <h3>Key points</h3>
-                <button
-                  className="button subtle compact-button"
-                  onClick={() => startSummaryEdit("key_points", summary.key_points || [])}
-                  type="button"
-                >
-                  Edit
-                </button>
+                <div className="actions inline-actions section-tools">
+                  <button
+                    className="button subtle compact-button"
+                    disabled={regeneratingField === "key_points"}
+                    onClick={() => startSummaryEdit("key_points", summary.key_points || [])}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="button subtle compact-button"
+                    disabled={!canRegenerate || Boolean(regeneratingField)}
+                    onClick={() => void regenerateSummarySection("key_points")}
+                    type="button"
+                  >
+                    {regeneratingField === "key_points"
+                      ? "Regenerating..."
+                      : "Regenerate"}
+                  </button>
+                </div>
               </div>
               {editingField === "key_points" ? (
                 <div className="summary-edit-form">
@@ -472,48 +553,79 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                     </button>
                   </div>
                 </div>
-              ) : (
+              ) : summary.key_points?.length ? (
                 <ul className="note-list">
                   {summary.key_points.map((point, index) => (
                     <li key={`${point}-${index}`}>{point}</li>
                   ))}
                 </ul>
+              ) : (
+                <p className="helper">No key points captured yet.</p>
               )}
             </article>
           ) : null}
 
-          {summary?.decisions?.length ? (
+          {summary ? (
             <article className="panel">
-              <h3>Decisions</h3>
-              <div className="section-stack">
-                {summary.decisions.map((decision, index) => (
-                  <div className="decision" key={`${decision.decision}-${index}`}>
-                    <strong>{decision.decision}</strong>
-                    {decision.context ? (
-                      <span className="helper">{decision.context}</span>
-                    ) : null}
-                    {decision.owner ? (
-                      <span className="pill">Owner: {decision.owner}</span>
-                    ) : null}
-                  </div>
-                ))}
+              <div className="section-heading compact">
+                <h3>Decisions</h3>
+                <button
+                  className="button subtle compact-button"
+                  disabled={!canRegenerate || Boolean(regeneratingField)}
+                  onClick={() => void regenerateSummarySection("decisions")}
+                  type="button"
+                >
+                  {regeneratingField === "decisions"
+                    ? "Regenerating..."
+                    : "Regenerate"}
+                </button>
               </div>
+              {summary.decisions?.length ? (
+                <div className="section-stack">
+                  {summary.decisions.map((decision, index) => (
+                    <div className="decision" key={`${decision.decision}-${index}`}>
+                      <strong>{decision.decision}</strong>
+                      {decision.context ? (
+                        <span className="helper">{decision.context}</span>
+                      ) : null}
+                      {decision.owner ? (
+                        <span className="pill">Owner: {decision.owner}</span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="helper">No decisions captured yet.</p>
+              )}
             </article>
           ) : null}
 
-          {summary?.follow_up_email ? (
+          {summary ? (
             <article className="panel">
               <div className="section-heading compact">
                 <h3>Follow-up email</h3>
-                <button
-                  className="button subtle compact-button"
-                  onClick={() =>
-                    startSummaryEdit("follow_up_email", summary.follow_up_email || "")
-                  }
-                  type="button"
-                >
-                  Edit
-                </button>
+                <div className="actions inline-actions section-tools">
+                  <button
+                    className="button subtle compact-button"
+                    disabled={regeneratingField === "follow_up_email"}
+                    onClick={() =>
+                      startSummaryEdit("follow_up_email", summary.follow_up_email || "")
+                    }
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="button subtle compact-button"
+                    disabled={!canRegenerate || Boolean(regeneratingField)}
+                    onClick={() => void regenerateSummarySection("follow_up_email")}
+                    type="button"
+                  >
+                    {regeneratingField === "follow_up_email"
+                      ? "Regenerating..."
+                      : "Regenerate"}
+                  </button>
+                </div>
               </div>
               {editingField === "follow_up_email" ? (
                 <div className="summary-edit-form">
@@ -541,8 +653,10 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                     </button>
                   </div>
                 </div>
-              ) : (
+              ) : summary.follow_up_email ? (
                 <div className="transcript">{summary.follow_up_email}</div>
+              ) : (
+                <p className="helper">No follow-up email generated yet.</p>
               )}
             </article>
           ) : null}
@@ -622,7 +736,21 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
           ) : null}
 
           <section className="panel">
-            <h3>Action items</h3>
+            <div className="section-heading compact">
+              <h3>Action items</h3>
+              {summary ? (
+                <button
+                  className="button subtle compact-button"
+                  disabled={!canRegenerate || Boolean(regeneratingField)}
+                  onClick={() => void regenerateSummarySection("action_items")}
+                  type="button"
+                >
+                  {regeneratingField === "action_items"
+                    ? "Regenerating..."
+                    : "Regenerate"}
+                </button>
+              ) : null}
+            </div>
             {summary?.action_items?.length ? (
               <div className="section-stack">
                 {summary.action_items.map((item, index) => (
@@ -644,36 +772,65 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
             )}
           </section>
 
-          {summary?.deliverables?.length ? (
+          {summary ? (
             <section className="panel">
-              <h3>Deliverables</h3>
-              <div className="section-stack">
-                {summary.deliverables.map((item, index) => (
-                  <div className="action-item" key={`${item.deliverable}-${index}`}>
-                    <strong>{item.deliverable}</strong>
-                    <div className="meta-row">
-                      <span className="pill">{item.owner || "Unassigned"}</span>
-                      {item.due_date ? <span className="pill">{item.due_date}</span> : null}
-                    </div>
-                  </div>
-                ))}
+              <div className="section-heading compact">
+                <h3>Deliverables</h3>
+                <button
+                  className="button subtle compact-button"
+                  disabled={!canRegenerate || Boolean(regeneratingField)}
+                  onClick={() => void regenerateSummarySection("deliverables")}
+                  type="button"
+                >
+                  {regeneratingField === "deliverables"
+                    ? "Regenerating..."
+                    : "Regenerate"}
+                </button>
               </div>
+              {summary.deliverables?.length ? (
+                <div className="section-stack">
+                  {summary.deliverables.map((item, index) => (
+                    <div className="action-item" key={`${item.deliverable}-${index}`}>
+                      <strong>{item.deliverable}</strong>
+                      <div className="meta-row">
+                        <span className="pill">{item.owner || "Unassigned"}</span>
+                        {item.due_date ? <span className="pill">{item.due_date}</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="helper">No deliverables captured yet.</p>
+              )}
             </section>
           ) : null}
 
-          {summary?.risks_blockers?.length ? (
+          {summary ? (
             <section className="panel">
               <div className="section-heading compact">
                 <h3>Risks and blockers</h3>
-                <button
-                  className="button subtle compact-button"
-                  onClick={() =>
-                    startSummaryEdit("risks_blockers", summary.risks_blockers || [])
-                  }
-                  type="button"
-                >
-                  Edit
-                </button>
+                <div className="actions inline-actions section-tools">
+                  <button
+                    className="button subtle compact-button"
+                    disabled={regeneratingField === "risks_blockers"}
+                    onClick={() =>
+                      startSummaryEdit("risks_blockers", summary.risks_blockers || [])
+                    }
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="button subtle compact-button"
+                    disabled={!canRegenerate || Boolean(regeneratingField)}
+                    onClick={() => void regenerateSummarySection("risks_blockers")}
+                    type="button"
+                  >
+                    {regeneratingField === "risks_blockers"
+                      ? "Regenerating..."
+                      : "Regenerate"}
+                  </button>
+                </div>
               </div>
               {editingField === "risks_blockers" ? (
                 <div className="summary-edit-form">
@@ -701,29 +858,44 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                     </button>
                   </div>
                 </div>
-              ) : (
+              ) : summary.risks_blockers?.length ? (
                 <ul className="note-list">
                   {summary.risks_blockers.map((risk, index) => (
                     <li key={`${risk}-${index}`}>{risk}</li>
                   ))}
                 </ul>
+              ) : (
+                <p className="helper">No risks or blockers captured yet.</p>
               )}
             </section>
           ) : null}
 
-          {summary?.open_questions?.length ? (
+          {summary ? (
             <section className="panel">
               <div className="section-heading compact">
                 <h3>Open questions</h3>
-                <button
-                  className="button subtle compact-button"
-                  onClick={() =>
-                    startSummaryEdit("open_questions", summary.open_questions || [])
-                  }
-                  type="button"
-                >
-                  Edit
-                </button>
+                <div className="actions inline-actions section-tools">
+                  <button
+                    className="button subtle compact-button"
+                    disabled={regeneratingField === "open_questions"}
+                    onClick={() =>
+                      startSummaryEdit("open_questions", summary.open_questions || [])
+                    }
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="button subtle compact-button"
+                    disabled={!canRegenerate || Boolean(regeneratingField)}
+                    onClick={() => void regenerateSummarySection("open_questions")}
+                    type="button"
+                  >
+                    {regeneratingField === "open_questions"
+                      ? "Regenerating..."
+                      : "Regenerate"}
+                  </button>
+                </div>
               </div>
               {editingField === "open_questions" ? (
                 <div className="summary-edit-form">
@@ -751,12 +923,14 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                     </button>
                   </div>
                 </div>
-              ) : (
+              ) : summary.open_questions?.length ? (
                 <ul className="note-list">
                   {summary.open_questions.map((question, index) => (
                     <li key={`${question}-${index}`}>{question}</li>
                   ))}
                 </ul>
+              ) : (
+                <p className="helper">No open questions captured yet.</p>
               )}
             </section>
           ) : null}

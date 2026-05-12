@@ -56,6 +56,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
   - view summary and action items
   - export Markdown
 - Meeting detail supports editing core generated summary sections before export.
+- Meeting detail supports regenerating individual AI-generated sections without reprocessing the whole meeting.
 - New meeting flow supports audio/video upload intake against the backend upload endpoint.
 - Uploaded recordings can be converted into a placeholder transcript until a real transcription provider is connected.
 - Local Whisper transcription provider is scaffolded behind the transcription provider abstraction for free, local speech-to-text.
@@ -79,7 +80,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Prevent duplicate AI outputs/action items when reprocessing a meeting.
 - [x] Edit generated notes before export.
 - [x] Add summary quality checks and better error recovery.
-- [ ] Regenerate individual sections.
+- [x] Regenerate individual sections.
 
 ### Phase 2: Action Item Workspace
 
@@ -136,7 +137,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add regenerate individual summary sections.
-2. Add meeting tags.
-3. Add saved views or filters.
-4. Add related meetings / memory recall.
+1. Add meeting tags.
+2. Add saved views or filters.
+3. Add related meetings / memory recall.
+4. Add calendar account model.

@@ -1209,6 +1209,10 @@ h3 {
   width: auto;
 }
 
+.section-tools {
+  justify-content: flex-end;
+}
+
 .inline-actions .button {
   min-height: 36px;
   padding: 0 12px;

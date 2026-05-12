@@ -51,6 +51,10 @@ class MeetingSummaryUpdate(BaseModel):
     follow_up_email: str | None = None
 
 
+class MeetingSummaryRegenerateIn(BaseModel):
+    section: str
+
+
 class ActionItemUpdate(BaseModel):
     task: str | None = None
     owner: str | None = None

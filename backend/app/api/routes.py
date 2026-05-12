@@ -12,6 +12,7 @@ from app.schemas.meeting import (
     TranscriptIn,
     MeetingAIOutputOut,
     MeetingSummaryUpdate,
+    MeetingSummaryRegenerateIn,
     ActionItemCreate,
     ActionItemUpdate,
     ActionItemOut,
@@ -20,6 +21,7 @@ from app.schemas.meeting import (
 from app.schemas.summary import MeetingSummarySchema
 from app.core.config import settings
 from app.services.summarization.meeting_summarizer import MeetingSummarizer
+from app.services.summarization.meeting_summarizer import REGENERATABLE_SECTIONS
 from app.services.summarization.quality import evaluate_summary_quality
 from app.jobs.process_meeting import process_meeting
 from app.services.llm.base import LLMProviderError
@@ -64,6 +66,23 @@ def search_excerpt(text: str | None, query: str, *, max_length: int = 180) -> st
     prefix = "..." if start > 0 else ""
     suffix = "..." if end < len(normalized) else ""
     return f"{prefix}{normalized[start:end]}{suffix}"
+
+
+def sync_generated_action_items(
+    db: Session, meeting_id: int, summary: MeetingSummarySchema
+) -> None:
+    db.query(ActionItem).filter_by(meeting_id=meeting_id).delete()
+    for ai in summary.action_items:
+        db.add(
+            ActionItem(
+                meeting_id=meeting_id,
+                task=ai.task,
+                owner=ai.owner,
+                due_date=ai.due_date,
+                priority=ai.priority,
+                evidence=ai.evidence,
+            )
+        )
 
 
 @router.post("/meetings", response_model=MeetingOut)
@@ -333,9 +352,94 @@ def patch_meeting_summary(
         out.quality_json = evaluate_summary_quality(
             meeting.transcript_text or "", validated
         )
+        if "action_items" in payload.model_dump(exclude_unset=True):
+            sync_generated_action_items(db, meeting_id, validated)
     db.commit()
     db.refresh(out)
     return out
+
+
+@router.post(
+    "/meetings/{meeting_id}/ai-output/summary/regenerate",
+    response_model=MeetingAIOutputOut,
+)
+async def regenerate_meeting_summary_section(
+    meeting_id: int,
+    payload: MeetingSummaryRegenerateIn,
+    db: Session = Depends(get_db),
+):
+    section = payload.section.strip()
+    if section not in REGENERATABLE_SECTIONS:
+        raise HTTPException(400, f"Unsupported summary section: {section}")
+
+    meeting = db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(404)
+    if not meeting.transcript_text:
+        raise HTTPException(400, "Transcript required to regenerate a section")
+
+    out = db.query(MeetingAIOutput).filter_by(meeting_id=meeting_id).first()
+    if not out:
+        raise HTTPException(404, "Process the meeting before regenerating sections")
+
+    try:
+        current_summary = MeetingSummarySchema.model_validate(out.summary_json)
+    except Exception as e:
+        raise HTTPException(400, f"Stored summary is invalid: {e}")
+
+    try:
+        provider_name, model, llm = get_llm_provider()
+    except ValueError as e:
+        raise HTTPException(500, str(e))
+
+    summarizer = MeetingSummarizer(llm, model)
+    meeting.status = MeetingStatus.summarizing
+    meeting.processing_error = None
+    db.commit()
+
+    try:
+        regenerated_value = await summarizer.regenerate_section(
+            meeting.transcript_text, current_summary, section
+        )
+        next_summary = {**current_summary.model_dump(), section: regenerated_value}
+        validated = MeetingSummarySchema.model_validate(next_summary)
+
+        out.provider = provider_name
+        out.model = model
+        out.summary_json = validated.model_dump()
+        out.quality_json = evaluate_summary_quality(
+            meeting.transcript_text or "", validated
+        )
+        if section == "action_items":
+            sync_generated_action_items(db, meeting_id, validated)
+        meeting.status = MeetingStatus.completed
+        meeting.processing_error = None
+        db.commit()
+        db.refresh(out)
+        return out
+    except LLMProviderError as e:
+        meeting.status = MeetingStatus.failed
+        meeting.processing_error = e.message
+        db.commit()
+        status = e.status_code or 502
+        if status == 429:
+            raise HTTPException(429, "Rate limited by OpenRouter. Try again in a bit.")
+        raise HTTPException(status, e.message)
+    except ValidationError as e:
+        meeting.status = MeetingStatus.failed
+        meeting.processing_error = (
+            f"Regenerated {section} did not match the required schema."
+        )
+        db.commit()
+        raise HTTPException(
+            422,
+            f"Regenerated {section} did not match the required schema: {e}",
+        )
+    except Exception as e:
+        meeting.status = MeetingStatus.failed
+        meeting.processing_error = str(e)
+        db.commit()
+        raise HTTPException(502, f"Regenerating {section} failed: {e}")
 
 
 @router.get("/action-items", response_model=list[ActionItemOut])
