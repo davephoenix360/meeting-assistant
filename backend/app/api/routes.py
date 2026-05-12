@@ -8,17 +8,36 @@ from app.schemas.meeting import (
     MeetingOut,
     TranscriptIn,
     MeetingAIOutputOut,
+    MeetingSummaryUpdate,
+    ActionItemCreate,
     ActionItemUpdate,
     ActionItemOut,
 )
+from app.schemas.summary import MeetingSummarySchema
 from app.core.config import settings
 from app.services.summarization.meeting_summarizer import MeetingSummarizer
 from app.jobs.process_meeting import process_meeting
 from app.services.llm.base import LLMProviderError
 from app.services.llm.factory import get_llm_provider
+from app.services.transcription.factory import get_transcription_provider
 import os
 
 router = APIRouter(prefix="/api")
+
+
+def action_item_out(item: ActionItem, meeting_title: str) -> ActionItemOut:
+    return ActionItemOut(
+        id=item.id,
+        meeting_id=item.meeting_id,
+        meeting_title=meeting_title,
+        task=item.task,
+        owner=item.owner,
+        due_date=item.due_date,
+        priority=item.priority,
+        status=item.status,
+        evidence=item.evidence,
+        created_at=item.created_at,
+    )
 
 
 @router.post("/meetings", response_model=MeetingOut)
@@ -51,7 +70,8 @@ async def upload_file(
     if not meeting:
         raise HTTPException(404)
     os.makedirs(settings.upload_dir, exist_ok=True)
-    file_path = os.path.join(settings.upload_dir, f"{meeting_id}_{file.filename}")
+    filename = os.path.basename(file.filename or "upload")
+    file_path = os.path.join(settings.upload_dir, f"{meeting_id}_{filename}")
     with open(file_path, "wb") as f:
         f.write(await file.read())
     if file.content_type and file.content_type.startswith("audio"):
@@ -75,6 +95,39 @@ def set_transcript(
     db.commit()
     db.refresh(meeting)
     return meeting
+
+
+@router.post("/meetings/{meeting_id}/transcribe", response_model=MeetingOut)
+async def transcribe_meeting(meeting_id: int, db: Session = Depends(get_db)):
+    meeting = db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(404)
+
+    file_path = meeting.audio_file_path or meeting.video_file_path
+    if not file_path:
+        raise HTTPException(400, "Uploaded audio or video required")
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "Uploaded file could not be found")
+
+    try:
+        provider_name, provider = get_transcription_provider()
+    except ValueError as e:
+        raise HTTPException(500, str(e))
+
+    meeting.status = MeetingStatus.transcribing
+    db.commit()
+
+    try:
+        result = await provider.transcribe(file_path)
+        meeting.transcript_text = result.text
+        meeting.status = MeetingStatus.transcribed
+        db.commit()
+        db.refresh(meeting)
+        return meeting
+    except Exception as e:
+        meeting.status = MeetingStatus.failed
+        db.commit()
+        raise HTTPException(502, f"{provider_name} transcription failed: {e}")
 
 
 @router.post("/meetings/{meeting_id}/process")
@@ -108,6 +161,28 @@ def get_ai_output(meeting_id: int, db: Session = Depends(get_db)):
     return out
 
 
+@router.patch(
+    "/meetings/{meeting_id}/ai-output/summary", response_model=MeetingAIOutputOut
+)
+def patch_meeting_summary(
+    meeting_id: int, payload: MeetingSummaryUpdate, db: Session = Depends(get_db)
+):
+    out = db.query(MeetingAIOutput).filter_by(meeting_id=meeting_id).first()
+    if not out:
+        raise HTTPException(404)
+
+    next_summary = {**out.summary_json, **payload.model_dump(exclude_unset=True)}
+    try:
+        validated = MeetingSummarySchema.model_validate(next_summary)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid summary update: {e}")
+
+    out.summary_json = validated.model_dump()
+    db.commit()
+    db.refresh(out)
+    return out
+
+
 @router.get("/action-items", response_model=list[ActionItemOut])
 def list_action_items(status: str | None = None, db: Session = Depends(get_db)):
     query = (
@@ -118,21 +193,32 @@ def list_action_items(status: str | None = None, db: Session = Depends(get_db)):
     if status:
         query = query.filter(ActionItem.status == status)
 
-    return [
-        ActionItemOut(
-            id=item.id,
-            meeting_id=item.meeting_id,
-            meeting_title=meeting_title,
-            task=item.task,
-            owner=item.owner,
-            due_date=item.due_date,
-            priority=item.priority,
-            status=item.status,
-            evidence=item.evidence,
-            created_at=item.created_at,
-        )
-        for item, meeting_title in query.all()
-    ]
+    return [action_item_out(item, meeting_title) for item, meeting_title in query.all()]
+
+
+@router.post("/action-items", response_model=ActionItemOut)
+def create_action_item(payload: ActionItemCreate, db: Session = Depends(get_db)):
+    meeting = db.get(Meeting, payload.meeting_id)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+
+    task = payload.task.strip()
+    if not task:
+        raise HTTPException(400, "Task is required")
+
+    item = ActionItem(
+        meeting_id=meeting.id,
+        task=task,
+        owner=payload.owner.strip() if payload.owner else None,
+        due_date=payload.due_date.strip() if payload.due_date else None,
+        priority=payload.priority or "medium",
+        status="open",
+        evidence=payload.evidence.strip() if payload.evidence else "",
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return action_item_out(item, meeting.title)
 
 
 @router.patch("/action-items/{action_item_id}")
@@ -155,7 +241,41 @@ def export_markdown(meeting_id: int, db: Session = Depends(get_db)):
     if not out:
         raise HTTPException(404)
     s = out.summary_json
-    md = f"# {s['title']}\n\n## Executive Summary\n{s['executive_summary']}\n\n## Action Items\n"
+    md = f"# {s['title']}\n\n## Executive Summary\n{s['executive_summary']}\n\n"
+    if s.get("key_points"):
+        md += "## Key Points\n"
+        for point in s.get("key_points", []):
+            md += f"- {point}\n"
+        md += "\n"
+    if s.get("decisions"):
+        md += "## Decisions\n"
+        for decision in s.get("decisions", []):
+            md += f"- {decision['decision']}"
+            if decision.get("owner"):
+                md += f" ({decision['owner']})"
+            if decision.get("context"):
+                md += f": {decision['context']}"
+            md += "\n"
+        md += "\n"
+    md += "## Action Items\n"
     for a in s.get("action_items", []):
         md += f"- [ ] {a['task']} ({a.get('owner') or 'Unassigned'})\n"
+    md += "\n"
+    if s.get("deliverables"):
+        md += "## Deliverables\n"
+        for deliverable in s.get("deliverables", []):
+            md += f"- {deliverable['deliverable']} ({deliverable.get('owner') or 'Unassigned'})\n"
+        md += "\n"
+    if s.get("risks_blockers"):
+        md += "## Risks and Blockers\n"
+        for risk in s.get("risks_blockers", []):
+            md += f"- {risk}\n"
+        md += "\n"
+    if s.get("open_questions"):
+        md += "## Open Questions\n"
+        for question in s.get("open_questions", []):
+            md += f"- {question}\n"
+        md += "\n"
+    if s.get("follow_up_email"):
+        md += f"## Follow-up Email\n{s['follow_up_email']}\n"
     return md

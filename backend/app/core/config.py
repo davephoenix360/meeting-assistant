@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./meeting_assistant.db"
     redis_url: str = "redis://localhost:6379/0"
     llm_provider: str = "openrouter"
+    transcription_provider: str = "placeholder"
     openrouter_api_key: str | None = None
     openrouter_default_model: str = "openai/gpt-4.1-mini"
     upload_dir: str = "./storage/uploads"

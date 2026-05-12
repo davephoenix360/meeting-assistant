@@ -1,9 +1,16 @@
 import Link from "next/link";
 import { api } from "../../lib/api";
-import { ActionItemsClient, type ActionItem } from "./ActionItemsClient";
+import {
+  ActionItemsClient,
+  type ActionItem,
+  type MeetingOption,
+} from "./ActionItemsClient";
 
 export default async function ActionItemsPage() {
-  const items = (await (await api("/action-items")).json()) as ActionItem[];
+  const [items, meetings] = await Promise.all([
+    (await api("/action-items")).json() as Promise<ActionItem[]>,
+    (await api("/meetings")).json() as Promise<MeetingOption[]>,
+  ]);
 
   return (
     <main className="page">
@@ -23,7 +30,7 @@ export default async function ActionItemsPage() {
         </div>
       </section>
 
-      <ActionItemsClient initialItems={items} />
+      <ActionItemsClient initialItems={items} meetings={meetings} />
     </main>
   );
 }

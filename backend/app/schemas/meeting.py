@@ -20,6 +20,8 @@ class MeetingOut(BaseModel):
     source_type: str
     status: str
     transcript_text: str | None
+    audio_file_path: str | None = None
+    video_file_path: str | None = None
 
     class Config:
         from_attributes = True
@@ -32,6 +34,15 @@ class MeetingAIOutputOut(BaseModel):
     summary_json: dict
 
 
+class MeetingSummaryUpdate(BaseModel):
+    title: str | None = None
+    executive_summary: str | None = None
+    key_points: list[str] | None = None
+    risks_blockers: list[str] | None = None
+    open_questions: list[str] | None = None
+    follow_up_email: str | None = None
+
+
 class ActionItemUpdate(BaseModel):
     task: str | None = None
     owner: str | None = None
@@ -39,6 +50,15 @@ class ActionItemUpdate(BaseModel):
     priority: str | None = None
     status: str | None = None
     evidence: str | None = None
+
+
+class ActionItemCreate(BaseModel):
+    meeting_id: int
+    task: str
+    owner: str | None = None
+    due_date: str | None = None
+    priority: str = "medium"
+    evidence: str = ""
 
 
 class ActionItemOut(BaseModel):

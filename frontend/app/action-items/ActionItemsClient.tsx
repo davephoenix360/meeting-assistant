@@ -17,6 +17,11 @@ export type ActionItem = {
   created_at: string;
 };
 
+export type MeetingOption = {
+  id: number;
+  title: string;
+};
+
 type Filter = "all" | "open" | "done";
 type DueFilter = "all" | "overdue" | "today" | "upcoming" | "no-date";
 type SortMode = "due-asc" | "due-desc" | "created-desc";
@@ -30,6 +35,15 @@ type ActionItemPatch = {
   evidence?: string;
 };
 
+type ActionItemCreate = {
+  meeting_id: number;
+  task: string;
+  owner?: string | null;
+  due_date?: string | null;
+  priority: string;
+  evidence: string;
+};
+
 type ActionItemDraft = {
   task: string;
   owner: string;
@@ -40,6 +54,7 @@ type ActionItemDraft = {
 
 type Props = {
   initialItems: ActionItem[];
+  meetings: MeetingOption[];
 };
 
 const ALL_OWNERS = "__all__";
@@ -86,13 +101,40 @@ async function patchActionItem(id: number, body: ActionItemPatch) {
   }
 }
 
-export function ActionItemsClient({ initialItems }: Props) {
+async function createActionItem(body: ActionItemCreate) {
+  const response = await fetch(`${API_BASE_URL}/action-items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return response.json() as Promise<ActionItem>;
+}
+
+function emptyDraft(meetingId = "") {
+  return {
+    meeting_id: meetingId,
+    task: "",
+    owner: "",
+    due_date: "",
+    priority: "medium",
+    evidence: "",
+  };
+}
+
+export function ActionItemsClient({ initialItems, meetings }: Props) {
   const [items, setItems] = useState(initialItems);
   const [filter, setFilter] = useState<Filter>("open");
   const [ownerFilter, setOwnerFilter] = useState(ALL_OWNERS);
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("due-asc");
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createDraft, setCreateDraft] = useState(emptyDraft(meetings[0]?.id.toString()));
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<ActionItemDraft | null>(null);
   const [error, setError] = useState("");
@@ -249,6 +291,47 @@ export function ActionItemsClient({ initialItems }: Props) {
     setDraft((current) => (current ? { ...current, [field]: value } : current));
   }
 
+  function updateCreateDraft(field: keyof typeof createDraft, value: string) {
+    setCreateDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitCreate() {
+    if (!meetings.length) {
+      setError("Create a meeting before adding manual action items.");
+      return;
+    }
+    if (!createDraft.meeting_id) {
+      setError("Choose a meeting for this action item.");
+      return;
+    }
+    if (!createDraft.task.trim()) {
+      setError("Task is required.");
+      return;
+    }
+
+    setIsCreating(true);
+    setError("");
+
+    try {
+      const item = await createActionItem({
+        meeting_id: Number(createDraft.meeting_id),
+        task: createDraft.task.trim(),
+        owner: createDraft.owner.trim() || null,
+        due_date: createDraft.due_date.trim() || null,
+        priority: createDraft.priority,
+        evidence: createDraft.evidence.trim(),
+      });
+      setItems((current) => [item, ...current]);
+      setCreateDraft(emptyDraft(createDraft.meeting_id));
+      setFilter("open");
+      setSortMode("created-desc");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create action item.");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   return (
     <>
       <section className="grid three stat-grid" aria-label="Action item totals">
@@ -288,6 +371,102 @@ export function ActionItemsClient({ initialItems }: Props) {
             ))}
           </div>
         </div>
+
+        <form
+          className="create-action-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitCreate();
+          }}
+        >
+          <div className="section-heading compact">
+            <div>
+              <p className="eyebrow">Manual task</p>
+              <h3>Add action item</h3>
+            </div>
+          </div>
+
+          <label className="field">
+            <span className="label">Task</span>
+            <textarea
+              className="textarea compact"
+              onChange={(event) => updateCreateDraft("task", event.target.value)}
+              placeholder="Add a follow-up task that was missed in the meeting notes."
+              value={createDraft.task}
+            />
+          </label>
+
+          <div className="form-grid">
+            <label className="field">
+              <span className="label">Meeting</span>
+              <select
+                className="input"
+                disabled={!meetings.length}
+                onChange={(event) => updateCreateDraft("meeting_id", event.target.value)}
+                value={createDraft.meeting_id}
+              >
+                {meetings.length ? null : <option value="">No meetings yet</option>}
+                {meetings.map((meeting) => (
+                  <option key={meeting.id} value={meeting.id}>
+                    {meeting.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Owner</span>
+              <input
+                className="input"
+                onChange={(event) => updateCreateDraft("owner", event.target.value)}
+                placeholder="Unassigned"
+                value={createDraft.owner}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Due date</span>
+              <input
+                className="input"
+                onChange={(event) => updateCreateDraft("due_date", event.target.value)}
+                placeholder="YYYY-MM-DD"
+                value={createDraft.due_date}
+              />
+            </label>
+          </div>
+
+          <div className="form-grid two-plus-one">
+            <label className="field">
+              <span className="label">Priority</span>
+              <select
+                className="input"
+                onChange={(event) => updateCreateDraft("priority", event.target.value)}
+                value={createDraft.priority}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label className="field wide-field">
+              <span className="label">Evidence</span>
+              <input
+                className="input"
+                onChange={(event) => updateCreateDraft("evidence", event.target.value)}
+                placeholder="Optional source context or note"
+                value={createDraft.evidence}
+              />
+            </label>
+          </div>
+
+          <div className="actions inline-actions">
+            <button
+              className="button primary"
+              disabled={isCreating || !meetings.length}
+              type="submit"
+            >
+              {isCreating ? "Adding..." : "Add action item"}
+            </button>
+          </div>
+        </form>
 
         <div className="filter-bar" aria-label="Action item filters">
           <label className="filter-field">

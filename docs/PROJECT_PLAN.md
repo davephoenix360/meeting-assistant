@@ -55,9 +55,12 @@ Do not make the architecture dependent on one meeting platform or one AI provide
   - save action items
   - view summary and action items
   - export Markdown
+- Meeting detail supports editing core generated summary sections before export.
+- New meeting flow supports audio/video upload intake against the backend upload endpoint.
+- Uploaded recordings can be converted into a placeholder transcript until a real transcription provider is connected.
 - OpenRouter provider implementation exists.
 - LLM provider resolution is moving toward a factory-based abstraction.
-- Cross-meeting action item workspace supports status/owner/due filters, sorting, overdue indicators, completion toggles, and inline edits.
+- Cross-meeting action item workspace supports manual creation, status/owner/due filters, sorting, overdue indicators, completion toggles, and inline edits.
 
 ## Phase Checklist
 
@@ -70,7 +73,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Display executive summary, key points, decisions, action items, deliverables, risks, open questions, and follow-up email.
 - [x] Export Markdown.
 - [x] Prevent duplicate AI outputs/action items when reprocessing a meeting.
-- [ ] Edit generated notes before export.
+- [x] Edit generated notes before export.
 - [ ] Regenerate individual sections.
 - [ ] Add summary quality checks and better error recovery.
 
@@ -83,7 +86,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Edit task, owner, due date, priority, and evidence from the action workspace.
 - [x] Add assignee/owner filters.
 - [x] Add due-date sorting and overdue indicators.
-- [ ] Add manual action item creation.
+- [x] Add manual action item creation.
 
 ### Phase 3: Meeting Library And Memory
 
@@ -96,8 +99,8 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 ### Phase 4: Audio/Video Transcription
 
 - [x] Upload endpoint scaffold.
-- [ ] Upload UI.
-- [ ] Local placeholder transcription path.
+- [x] Upload UI.
+- [x] Local placeholder transcription path.
 - [ ] Real transcription provider abstraction.
 - [ ] Persist transcript provenance and confidence metadata.
 
@@ -128,7 +131,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add manual action item creation.
-2. Add editable summary sections on the meeting detail page.
-3. Add upload UI for audio/video and connect it to the existing upload endpoint.
-4. Add search across meetings, summaries, transcripts, and action items.
+1. Add real transcription provider abstraction and first provider implementation.
+2. Add search across meetings, summaries, transcripts, and action items.
+3. Add action item deletion or archiving.
+4. Add summary quality checks and better error recovery.
