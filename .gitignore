@@ -1,0 +1,74 @@
+# --- Secrets / environment ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+wheelhouse/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.pyre/
+.ruff_cache/
+.pytype/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# --- FastAPI / Uvicorn / logs ---
+*.log
+logs/
+
+# --- Alembic ---
+# Ignore runtime artifacts but keep migration scripts
+alembic/*.log
+
+# --- Databases / local state ---
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Node / Next.js (frontend) ---
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- TypeScript build artifacts ---
+*.tsbuildinfo
+
+# --- Editor / OS ---
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Misc ---
+*.swp
+*.swo
+*.tmp
