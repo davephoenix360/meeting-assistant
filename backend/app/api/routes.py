@@ -3,6 +3,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
+from pydantic import ValidationError
 from app.db.session import get_db
 from app.models.models import Meeting, MeetingStatus, MeetingAIOutput, ActionItem
 from app.schemas.meeting import (
@@ -19,6 +20,7 @@ from app.schemas.meeting import (
 from app.schemas.summary import MeetingSummarySchema
 from app.core.config import settings
 from app.services.summarization.meeting_summarizer import MeetingSummarizer
+from app.services.summarization.quality import evaluate_summary_quality
 from app.jobs.process_meeting import process_meeting
 from app.services.llm.base import LLMProviderError
 from app.services.llm.factory import get_llm_provider
@@ -286,8 +288,19 @@ async def process(meeting_id: int, db: Session = Depends(get_db)):
         status = e.status_code or 502
         # Preserve rate limiting semantics for the frontend.
         if status == 429:
-            raise HTTPException(429, "Rate limited by OpenRouter. Try again in a bit.")
+            detail = "Rate limited by OpenRouter. Try again in a bit."
+            if e.retry_after_seconds:
+                detail = f"{detail} Retry after about {e.retry_after_seconds} seconds."
+            raise HTTPException(429, detail)
         raise HTTPException(status, e.message)
+    except ValidationError as e:
+        raise HTTPException(
+            422,
+            "AI output did not match the required meeting note structure. "
+            f"Try processing again or switch models. Validation detail: {e}",
+        )
+    except Exception as e:
+        raise HTTPException(502, f"Meeting processing failed: {e}")
 
 
 @router.get("/meetings/{meeting_id}/ai-output", response_model=MeetingAIOutputOut)
@@ -315,6 +328,11 @@ def patch_meeting_summary(
         raise HTTPException(400, f"Invalid summary update: {e}")
 
     out.summary_json = validated.model_dump()
+    meeting = db.get(Meeting, meeting_id)
+    if meeting:
+        out.quality_json = evaluate_summary_quality(
+            meeting.transcript_text or "", validated
+        )
     db.commit()
     db.refresh(out)
     return out

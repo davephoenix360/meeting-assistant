@@ -28,6 +28,7 @@ class MeetingOut(BaseModel):
     transcript_language: str | None = None
     transcript_confidence: str | None = None
     transcript_created_at: datetime | None = None
+    processing_error: str | None = None
 
     class Config:
         from_attributes = True
@@ -38,6 +39,7 @@ class MeetingAIOutputOut(BaseModel):
     provider: str
     model: str
     summary_json: dict
+    quality_json: dict | None = None
 
 
 class MeetingSummaryUpdate(BaseModel):

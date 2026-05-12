@@ -63,7 +63,8 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Workspace search spans meetings, transcripts, AI summaries, and action items.
 - OpenRouter provider implementation exists.
 - LLM provider resolution is moving toward a factory-based abstraction.
-- Cross-meeting action item workspace supports manual creation, status/owner/due filters, sorting, overdue indicators, completion toggles, and inline edits.
+- Cross-meeting action item workspace supports manual creation, status/owner/due filters, sorting, overdue indicators, completion toggles, inline edits, and archiving.
+- AI processing persists failure context and deterministic summary quality checks for review.
 
 ## Phase Checklist
 
@@ -77,8 +78,8 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Export Markdown.
 - [x] Prevent duplicate AI outputs/action items when reprocessing a meeting.
 - [x] Edit generated notes before export.
+- [x] Add summary quality checks and better error recovery.
 - [ ] Regenerate individual sections.
-- [ ] Add summary quality checks and better error recovery.
 
 ### Phase 2: Action Item Workspace
 
@@ -135,7 +136,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add summary quality checks and better error recovery.
-2. Add regenerate individual summary sections.
-3. Add meeting tags.
-4. Add saved views or filters.
+1. Add regenerate individual summary sections.
+2. Add meeting tags.
+3. Add saved views or filters.
+4. Add related meetings / memory recall.

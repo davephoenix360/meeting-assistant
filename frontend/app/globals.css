@@ -545,9 +545,24 @@ h3 {
   color: var(--green);
 }
 
+.status.good {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
 .status.open {
   background: var(--amber-soft);
   color: var(--amber);
+}
+
+.status.needs_review {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.status.weak {
+  background: var(--rose-soft);
+  color: var(--rose);
 }
 
 .status.transcribed,
@@ -784,6 +799,57 @@ h3 {
 .summary-copy {
   color: var(--ink-soft);
   line-height: 1.66;
+}
+
+.quality-panel.good {
+  border-color: rgba(15, 138, 98, 0.2);
+}
+
+.quality-panel.needs_review {
+  border-color: rgba(183, 121, 31, 0.28);
+}
+
+.quality-panel.weak {
+  border-color: rgba(194, 65, 91, 0.28);
+}
+
+.quality-score {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 14px;
+}
+
+.quality-score strong {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.quality-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quality-issue {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  padding: 10px 11px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.quality-issue.warning {
+  border-color: rgba(183, 121, 31, 0.24);
+  background: var(--amber-soft);
+}
+
+.quality-issue.critical {
+  border-color: rgba(194, 65, 91, 0.24);
+  background: var(--rose-soft);
 }
 
 .summary-edit-form {

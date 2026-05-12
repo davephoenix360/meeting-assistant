@@ -18,6 +18,7 @@ type Meeting = {
   transcript_language?: string | null;
   transcript_confidence?: string | null;
   transcript_created_at?: string | null;
+  processing_error?: string | null;
 };
 
 type Decision = {
@@ -52,10 +53,22 @@ type Summary = {
   follow_up_email?: string;
 };
 
+type QualityIssue = {
+  severity: "warning" | "critical" | string;
+  message: string;
+};
+
+type QualityReport = {
+  score?: number;
+  status?: "good" | "needs_review" | "weak" | string;
+  issues?: QualityIssue[];
+};
+
 type AIOutput = {
   provider: string;
   model: string;
   summary_json: Summary;
+  quality_json?: QualityReport | null;
 };
 
 type EditableSummaryField =
@@ -79,10 +92,43 @@ async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`);
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(await getApiErrorMessage(response));
   }
 
   return response.json() as Promise<T>;
+}
+
+async function getApiErrorMessage(response: Response) {
+  const text = await response.text();
+  if (!text) {
+    return response.statusText || "Request failed.";
+  }
+
+  try {
+    const body = JSON.parse(text) as { detail?: unknown };
+    if (typeof body.detail === "string") {
+      return body.detail;
+    }
+    if (Array.isArray(body.detail)) {
+      return body.detail
+        .map((item) => {
+          if (
+            item &&
+            typeof item === "object" &&
+            "msg" in item &&
+            typeof item.msg === "string"
+          ) {
+            return item.msg;
+          }
+          return JSON.stringify(item);
+        })
+        .join(" ");
+    }
+  } catch {
+    return text;
+  }
+
+  return text;
 }
 
 function listToDraft(values?: string[]) {
@@ -133,7 +179,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        throw new Error(await getApiErrorMessage(response));
       }
 
       await refresh();
@@ -158,7 +204,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        throw new Error(await getApiErrorMessage(response));
       }
 
       setMeeting((await response.json()) as Meeting);
@@ -207,7 +253,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       );
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        throw new Error(await getApiErrorMessage(response));
       }
 
       setOutput((await response.json()) as AIOutput);
@@ -244,6 +290,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   }
 
   const summary = output?.summary_json;
+  const quality = output?.quality_json;
   const canExport = Boolean(output);
   const canProcess = Boolean(meeting.transcript_text);
   const hasUploadedMedia = Boolean(meeting.audio_file_path || meeting.video_file_path);
@@ -290,6 +337,11 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       </section>
 
       {error ? <div className="alert">{error}</div> : null}
+      {!error && meeting.status === "failed" && meeting.processing_error ? (
+        <div className="alert">
+          Processing failed: {meeting.processing_error}
+        </div>
+      ) : null}
 
       {hasUploadedMedia && !meeting.transcript_text ? (
         <section className="panel upload-state-panel">
@@ -533,6 +585,42 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
         </div>
 
         <aside className="section-stack">
+          {quality ? (
+            <section className={`panel quality-panel ${quality.status || "good"}`}>
+              <div className="section-heading compact">
+                <div>
+                  <p className="eyebrow">Quality</p>
+                  <h3>Summary checks</h3>
+                </div>
+                <span className={`status ${quality.status || "good"}`}>
+                  {quality.status === "needs_review"
+                    ? "Needs review"
+                    : quality.status || "good"}
+                </span>
+              </div>
+              <div className="quality-score">
+                <strong>{quality.score ?? 100}</strong>
+                <span className="helper">Quality score</span>
+              </div>
+              {quality.issues?.length ? (
+                <ul className="quality-list">
+                  {quality.issues.map((issue, index) => (
+                    <li
+                      className={`quality-issue ${issue.severity}`}
+                      key={`${issue.message}-${index}`}
+                    >
+                      {issue.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="helper">
+                  No quality warnings found for this summary.
+                </p>
+              )}
+            </section>
+          ) : null}
+
           <section className="panel">
             <h3>Action items</h3>
             {summary?.action_items?.length ? (
