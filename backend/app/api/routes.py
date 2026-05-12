@@ -41,6 +41,7 @@ def action_item_out(item: ActionItem, meeting_title: str) -> ActionItemOut:
         status=item.status,
         evidence=item.evidence,
         created_at=item.created_at,
+        archived_at=item.archived_at,
     )
 
 
@@ -139,6 +140,7 @@ def search(q: str, db: Session = Depends(get_db)):
     action_items = (
         db.query(ActionItem, Meeting.title.label("meeting_title"))
         .join(Meeting, ActionItem.meeting_id == Meeting.id)
+        .filter(ActionItem.archived_at.is_(None))
         .filter(
             or_(
                 ActionItem.task.ilike(pattern),
@@ -319,12 +321,18 @@ def patch_meeting_summary(
 
 
 @router.get("/action-items", response_model=list[ActionItemOut])
-def list_action_items(status: str | None = None, db: Session = Depends(get_db)):
+def list_action_items(
+    status: str | None = None,
+    include_archived: bool = False,
+    db: Session = Depends(get_db),
+):
     query = (
         db.query(ActionItem, Meeting.title.label("meeting_title"))
         .join(Meeting, ActionItem.meeting_id == Meeting.id)
         .order_by(ActionItem.created_at.desc(), ActionItem.id.desc())
     )
+    if not include_archived:
+        query = query.filter(ActionItem.archived_at.is_(None))
     if status:
         query = query.filter(ActionItem.status == status)
 
@@ -368,6 +376,38 @@ def patch_action_item(
     db.commit()
     db.refresh(item)
     return item
+
+
+@router.post("/action-items/{action_item_id}/archive", response_model=ActionItemOut)
+def archive_action_item(action_item_id: int, db: Session = Depends(get_db)):
+    item = db.get(ActionItem, action_item_id)
+    if not item:
+        raise HTTPException(404)
+
+    meeting = db.get(Meeting, item.meeting_id)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+
+    item.archived_at = func.now()
+    db.commit()
+    db.refresh(item)
+    return action_item_out(item, meeting.title)
+
+
+@router.post("/action-items/{action_item_id}/restore", response_model=ActionItemOut)
+def restore_action_item(action_item_id: int, db: Session = Depends(get_db)):
+    item = db.get(ActionItem, action_item_id)
+    if not item:
+        raise HTTPException(404)
+
+    meeting = db.get(Meeting, item.meeting_id)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+
+    item.archived_at = None
+    db.commit()
+    db.refresh(item)
+    return action_item_out(item, meeting.title)
 
 
 @router.get("/meetings/{meeting_id}/export/markdown", response_class=PlainTextResponse)

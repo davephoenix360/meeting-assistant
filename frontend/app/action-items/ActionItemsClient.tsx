@@ -15,6 +15,7 @@ export type ActionItem = {
   status: string;
   evidence: string;
   created_at: string;
+  archived_at: string | null;
 };
 
 export type MeetingOption = {
@@ -22,7 +23,7 @@ export type MeetingOption = {
   title: string;
 };
 
-type Filter = "all" | "open" | "done";
+type Filter = "all" | "open" | "done" | "archived";
 type DueFilter = "all" | "overdue" | "today" | "upcoming" | "no-date";
 type SortMode = "due-asc" | "due-desc" | "created-desc";
 
@@ -86,7 +87,9 @@ function dateKey(date: Date) {
 
 function isOverdue(item: ActionItem) {
   const dueDate = parseDueDate(item.due_date);
-  return Boolean(dueDate && item.status !== "done" && dueDate < startOfToday());
+  return Boolean(
+    !item.archived_at && dueDate && item.status !== "done" && dueDate < startOfToday(),
+  );
 }
 
 async function patchActionItem(id: number, body: ActionItemPatch) {
@@ -106,6 +109,18 @@ async function createActionItem(body: ActionItemCreate) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  return response.json() as Promise<ActionItem>;
+}
+
+async function postActionItemState(id: number, action: "archive" | "restore") {
+  const response = await fetch(`${API_BASE_URL}/action-items/${id}/${action}`, {
+    method: "POST",
   });
 
   if (!response.ok) {
@@ -142,7 +157,17 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
   const filteredItems = useMemo(() => {
     const today = startOfToday();
     const nextItems = items.filter((item) => {
-      if (filter !== "all" && item.status !== filter) {
+      const isArchived = Boolean(item.archived_at);
+
+      if (filter === "archived") {
+        if (!isArchived) {
+          return false;
+        }
+      } else if (isArchived) {
+        return false;
+      }
+
+      if (filter !== "all" && filter !== "archived" && item.status !== filter) {
         return false;
       }
 
@@ -200,8 +225,9 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
   }, [dueFilter, filter, items, ownerFilter, sortMode]);
 
   const totals = useMemo(() => {
-    const open = items.filter((item) => item.status === "open").length;
-    const done = items.filter((item) => item.status === "done").length;
+    const activeItems = items.filter((item) => !item.archived_at);
+    const open = activeItems.filter((item) => item.status === "open").length;
+    const done = activeItems.filter((item) => item.status === "done").length;
     const overdue = items.filter(isOverdue).length;
     return { open, done, overdue };
   }, [items]);
@@ -217,6 +243,10 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
   }, [items]);
 
   async function setStatus(item: ActionItem, status: "open" | "done") {
+    if (item.archived_at) {
+      return;
+    }
+
     setSavingId(item.id);
     setError("");
     const previous = items;
@@ -231,6 +261,41 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
     } catch (err) {
       setItems(previous);
       setError(err instanceof Error ? err.message : "Unable to update action item.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function setArchiveState(item: ActionItem, archived: boolean) {
+    setSavingId(item.id);
+    setError("");
+    const previous = items;
+    const optimisticArchiveDate = archived ? new Date().toISOString() : null;
+
+    setItems((current) =>
+      current.map((currentItem) =>
+        currentItem.id === item.id
+          ? { ...currentItem, archived_at: optimisticArchiveDate }
+          : currentItem,
+      ),
+    );
+
+    try {
+      const nextItem = await postActionItemState(
+        item.id,
+        archived ? "archive" : "restore",
+      );
+      setItems((current) =>
+        current.map((currentItem) =>
+          currentItem.id === item.id ? nextItem : currentItem,
+        ),
+      );
+      if (editingId === item.id) {
+        cancelEdit();
+      }
+    } catch (err) {
+      setItems(previous);
+      setError(err instanceof Error ? err.message : "Unable to update archive state.");
     } finally {
       setSavingId(null);
     }
@@ -359,7 +424,7 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
             <h3>Action workspace</h3>
           </div>
           <div className="segmented-control" aria-label="Filter action items">
-            {(["open", "all", "done"] as Filter[]).map((nextFilter) => (
+            {(["open", "all", "done", "archived"] as Filter[]).map((nextFilter) => (
               <button
                 className={filter === nextFilter ? "active" : ""}
                 key={nextFilter}
@@ -520,8 +585,9 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
             <div className="empty-inner">
               <h3>No action items here</h3>
               <p className="helper">
-                Process a meeting with follow-up tasks or switch filters to see
-                completed work.
+                {filter === "archived"
+                  ? "Archived action items will appear here after you remove them from active follow-up."
+                  : "Process a meeting with follow-up tasks or switch filters to see completed work."}
               </p>
               <Link className="button primary" href="/meetings">
                 View meetings
@@ -532,11 +598,14 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
           <ul className="action-list">
             {filteredItems.map((item) => {
               const isDone = item.status === "done";
+              const isArchived = Boolean(item.archived_at);
               const isEditing = editingId === item.id && draft;
               const overdue = isOverdue(item);
               return (
                 <li
                   className={`action-row ${isDone ? "done" : ""} ${
+                    isArchived ? "archived" : ""
+                  } ${
                     overdue ? "overdue" : ""
                   }`}
                   key={item.id}
@@ -544,7 +613,7 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
                   <button
                     aria-label={isDone ? "Mark open" : "Mark done"}
                     className="check-button"
-                    disabled={savingId === item.id}
+                    disabled={savingId === item.id || isArchived}
                     onClick={() => void setStatus(item, isDone ? "open" : "done")}
                     type="button"
                   >
@@ -634,7 +703,9 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
                       <>
                         <div className="action-title-row">
                           <strong>{item.task}</strong>
-                          <span className={`status ${item.status}`}>{item.status}</span>
+                          <span className={`status ${isArchived ? "archived" : item.status}`}>
+                            {isArchived ? "archived" : item.status}
+                          </span>
                         </div>
                         <div className="meta-row">
                           <Link
@@ -652,13 +723,34 @@ export function ActionItemsClient({ initialItems, meetings }: Props) {
                         </div>
                         {item.evidence ? <p className="helper">{item.evidence}</p> : null}
                         <div className="actions inline-actions">
-                          <button
-                            className="button subtle"
-                            onClick={() => startEdit(item)}
-                            type="button"
-                          >
-                            Edit
-                          </button>
+                          {isArchived ? (
+                            <button
+                              className="button subtle"
+                              disabled={savingId === item.id}
+                              onClick={() => void setArchiveState(item, false)}
+                              type="button"
+                            >
+                              {savingId === item.id ? "Restoring..." : "Restore"}
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                className="button subtle"
+                                onClick={() => startEdit(item)}
+                                type="button"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="button subtle danger"
+                                disabled={savingId === item.id}
+                                onClick={() => void setArchiveState(item, true)}
+                                type="button"
+                              >
+                                {savingId === item.id ? "Archiving..." : "Archive"}
+                              </button>
+                            </>
+                          )}
                         </div>
                       </>
                     )}

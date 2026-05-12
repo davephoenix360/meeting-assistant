@@ -8,7 +8,7 @@ import {
 
 export default async function ActionItemsPage() {
   const [items, meetings] = await Promise.all([
-    (await api("/action-items")).json() as Promise<ActionItem[]>,
+    (await api("/action-items?include_archived=true")).json() as Promise<ActionItem[]>,
     (await api("/meetings")).json() as Promise<MeetingOption[]>,
   ]);
 

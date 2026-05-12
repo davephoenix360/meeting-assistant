@@ -78,6 +78,7 @@ class ActionItemOut(BaseModel):
     status: str
     evidence: str
     created_at: datetime
+    archived_at: datetime | None = None
 
 
 class SearchResultOut(BaseModel):

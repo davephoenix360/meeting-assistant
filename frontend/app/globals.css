@@ -336,6 +336,15 @@ h3 {
   background: transparent;
 }
 
+.button.danger {
+  color: var(--rose);
+}
+
+.button.danger:hover {
+  border-color: rgba(194, 65, 91, 0.42);
+  background: var(--rose-soft);
+}
+
 .grid {
   display: grid;
   gap: 16px;
@@ -551,6 +560,11 @@ h3 {
 .status.failed {
   background: var(--rose-soft);
   color: var(--rose);
+}
+
+.status.archived {
+  background: var(--surface-muted);
+  color: var(--muted);
 }
 
 .form {
@@ -1029,6 +1043,11 @@ h3 {
   background: rgba(247, 249, 252, 0.82);
 }
 
+.action-row.archived {
+  border-style: dashed;
+  background: rgba(247, 249, 252, 0.72);
+}
+
 .action-row.overdue {
   border-color: rgba(194, 65, 91, 0.34);
   background:
@@ -1040,6 +1059,10 @@ h3 {
   color: var(--muted);
   text-decoration: line-through;
   text-decoration-thickness: 2px;
+}
+
+.action-row.archived .action-content strong {
+  color: var(--muted);
 }
 
 .check-button {

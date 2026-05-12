@@ -90,6 +90,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Add assignee/owner filters.
 - [x] Add due-date sorting and overdue indicators.
 - [x] Add manual action item creation.
+- [x] Add action item archiving and restore.
 
 ### Phase 3: Meeting Library And Memory
 
@@ -134,7 +135,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add action item deletion or archiving.
-2. Add summary quality checks and better error recovery.
-3. Add regenerate individual summary sections.
-4. Add meeting tags.
+1. Add summary quality checks and better error recovery.
+2. Add regenerate individual summary sections.
+3. Add meeting tags.
+4. Add saved views or filters.
