@@ -828,6 +828,21 @@ h3 {
   line-height: 1;
 }
 
+.processing-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.processing-meta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 5px 8px;
+}
+
 .quality-list {
   display: grid;
   gap: 8px;

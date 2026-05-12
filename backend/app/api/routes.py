@@ -211,6 +211,26 @@ def sync_generated_action_items(
         )
 
 
+def build_meeting_summarizer(llm, model: str) -> MeetingSummarizer:
+    return MeetingSummarizer(
+        llm,
+        model,
+        refine_threshold_chars=settings.summarization_refine_threshold_chars,
+        refine_chunk_chars=settings.summarization_refine_chunk_chars,
+        refine_overlap_chars=settings.summarization_refine_overlap_chars,
+    )
+
+
+def preserve_processing_quality_metadata(
+    current_quality: dict | None,
+    next_quality: dict,
+) -> dict:
+    processing = (current_quality or {}).get("processing")
+    if processing:
+        next_quality["processing"] = processing
+    return next_quality
+
+
 @router.post("/meetings", response_model=MeetingOut)
 def create_meeting(payload: MeetingCreate, db: Session = Depends(get_db)):
     data = payload.model_dump()
@@ -617,7 +637,7 @@ async def process(meeting_id: int, db: Session = Depends(get_db)):
         provider_name, model, llm = get_llm_provider()
     except ValueError as e:
         raise HTTPException(500, str(e))
-    summarizer = MeetingSummarizer(llm, model)
+    summarizer = build_meeting_summarizer(llm, model)
     try:
         await process_meeting(meeting, db, summarizer, provider_name, model)
         return {"ok": True}
@@ -667,8 +687,9 @@ def patch_meeting_summary(
     out.summary_json = validated.model_dump()
     meeting = db.get(Meeting, meeting_id)
     if meeting:
-        out.quality_json = evaluate_summary_quality(
-            meeting.transcript_text or "", validated
+        out.quality_json = preserve_processing_quality_metadata(
+            out.quality_json,
+            evaluate_summary_quality(meeting.transcript_text or "", validated),
         )
         if "action_items" in payload.model_dump(exclude_unset=True):
             sync_generated_action_items(db, meeting_id, validated)
@@ -710,7 +731,7 @@ async def regenerate_meeting_summary_section(
     except ValueError as e:
         raise HTTPException(500, str(e))
 
-    summarizer = MeetingSummarizer(llm, model)
+    summarizer = build_meeting_summarizer(llm, model)
     meeting.status = MeetingStatus.summarizing
     meeting.processing_error = None
     db.commit()
@@ -725,8 +746,9 @@ async def regenerate_meeting_summary_section(
         out.provider = provider_name
         out.model = model
         out.summary_json = validated.model_dump()
-        out.quality_json = evaluate_summary_quality(
-            meeting.transcript_text or "", validated
+        out.quality_json = preserve_processing_quality_metadata(
+            out.quality_json,
+            evaluate_summary_quality(meeting.transcript_text or "", validated),
         )
         if section == "action_items":
             sync_generated_action_items(db, meeting_id, validated)

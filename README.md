@@ -40,5 +40,6 @@ npm run dev
 ## Notes
 
 - OpenRouter API key can be supplied with `OPENROUTER_API_KEY`.
+- Long transcript processing switches to sequential Refine mode after `SUMMARIZATION_REFINE_THRESHOLD_CHARS` characters. Chunk and overlap sizes can be tuned with `SUMMARIZATION_REFINE_CHUNK_CHARS` and `SUMMARIZATION_REFINE_OVERLAP_CHARS`.
 - Background jobs use a simple async task runner for MVP; Redis queue integration is scaffolded with TODO markers.
 - See `docs/04_MEETING_PLATFORM_ROADMAP.md` for Zoom/Meet/Teams roadmap constraints.

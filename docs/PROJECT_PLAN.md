@@ -58,6 +58,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
   - export Markdown
 - Meeting detail supports editing core generated summary sections before export.
 - Meeting detail supports regenerating individual AI-generated sections without reprocessing the whole meeting.
+- Long transcripts are processed with sequential Refine chunking, overlap, and entity/action tracking before final structured note generation.
 - Meetings support user-managed tags for library filtering and search.
 - Meeting library supports reusable saved filter views.
 - Meeting detail recalls related meetings from tags, summaries, transcripts, and action items.
@@ -85,7 +86,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Edit generated notes before export.
 - [x] Add summary quality checks and better error recovery.
 - [x] Regenerate individual sections.
-- [ ] Add long-transcript Refine processing with overlap and entity/action tracking.
+- [x] Add long-transcript Refine processing with overlap and entity/action tracking.
 
 ### Phase 2: Action Item Workspace
 
@@ -142,7 +143,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add long-transcript Refine processing with overlap and entity/action tracking.
-2. Add calendar account model.
-3. Add calendar event import.
-4. Attach imported artifacts to meetings.
+1. Add calendar account model.
+2. Add calendar event import.
+3. Attach imported artifacts to meetings.
+4. Add calendar-based meeting creation/import UI.

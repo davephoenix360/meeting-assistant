@@ -24,6 +24,8 @@ async def process_meeting(
     try:
         summary = await summarizer.summarize_transcript(meeting.transcript_text or "")
         quality = evaluate_summary_quality(meeting.transcript_text or "", summary)
+        if summarizer.last_processing_info:
+            quality["processing"] = summarizer.last_processing_info
         output = db.query(MeetingAIOutput).filter_by(meeting_id=meeting.id).first()
         if output:
             output.provider = provider_name

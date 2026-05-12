@@ -59,10 +59,19 @@ type QualityIssue = {
   message: string;
 };
 
+type ProcessingQuality = {
+  strategy?: string;
+  chunk_count?: number;
+  chunk_chars?: number;
+  overlap_chars?: number;
+  transcript_chars?: number;
+};
+
 type QualityReport = {
   score?: number;
   status?: "good" | "needs_review" | "weak" | string;
   issues?: QualityIssue[];
+  processing?: ProcessingQuality;
 };
 
 type AIOutput = {
@@ -428,6 +437,9 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
     { label: "Actions", value: summary?.action_items?.length ?? 0 },
     { label: "Decisions", value: summary?.decisions?.length ?? 0 },
   ];
+  const processing = quality?.processing;
+  const processingStrategy =
+    processing?.strategy === "refine" ? "Refine" : "Single pass";
 
   return (
     <main className="page">
@@ -904,6 +916,17 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                 <strong>{quality.score ?? 100}</strong>
                 <span className="helper">Quality score</span>
               </div>
+              {processing ? (
+                <div className="processing-meta">
+                  <span>{processingStrategy}</span>
+                  <span>{processing.chunk_count || 1} chunk(s)</span>
+                  {processing.overlap_chars ? (
+                    <span>
+                      {processing.overlap_chars.toLocaleString()} overlap chars
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {quality.issues?.length ? (
                 <ul className="quality-list">
                   {quality.issues.map((issue, index) => (
