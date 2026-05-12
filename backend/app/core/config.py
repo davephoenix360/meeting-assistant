@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     transcription_provider: str = "placeholder"
     openrouter_api_key: str | None = None
     openrouter_default_model: str = "openai/gpt-4.1-mini"
+    local_whisper_model: str = "base"
+    local_whisper_device: str = "auto"
+    local_whisper_compute_type: str = "default"
     upload_dir: str = "./storage/uploads"
     # Keep this as a simple string so pydantic-settings doesn't require JSON
     # parsing for list types in `.env`. Accepts either CSV or JSON array.

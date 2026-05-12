@@ -19,6 +19,7 @@ from app.services.summarization.meeting_summarizer import MeetingSummarizer
 from app.jobs.process_meeting import process_meeting
 from app.services.llm.base import LLMProviderError
 from app.services.llm.factory import get_llm_provider
+from app.services.transcription.base import TranscriptionProviderError
 from app.services.transcription.factory import get_transcription_provider
 import os
 
@@ -124,6 +125,13 @@ async def transcribe_meeting(meeting_id: int, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(meeting)
         return meeting
+    except TranscriptionProviderError as e:
+        meeting.status = MeetingStatus.failed
+        db.commit()
+        raise HTTPException(
+            e.status_code or 502,
+            f"{e.provider or provider_name} transcription failed: {e.message}",
+        )
     except Exception as e:
         meeting.status = MeetingStatus.failed
         db.commit()

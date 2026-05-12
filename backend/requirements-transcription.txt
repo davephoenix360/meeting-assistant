@@ -1,0 +1,4 @@
+# Optional local, free transcription runtime.
+# Install this only on machines that should run local speech-to-text:
+#   pip install -r requirements-transcription.txt
+faster-whisper>=1.1,<2
