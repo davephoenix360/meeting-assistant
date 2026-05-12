@@ -65,6 +65,7 @@ class Meeting(Base):
     transcript_confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
     transcript_created_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     processing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

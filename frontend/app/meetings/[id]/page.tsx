@@ -19,6 +19,7 @@ type Meeting = {
   transcript_confidence?: string | null;
   transcript_created_at?: string | null;
   processing_error?: string | null;
+  tags?: string[];
 };
 
 type Decision = {
@@ -152,6 +153,17 @@ function draftToList(value: string) {
     .filter(Boolean);
 }
 
+function draftToTags(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((tag) => tag.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ).slice(0, 12);
+}
+
 export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [output, setOutput] = useState<AIOutput | null>(null);
@@ -163,6 +175,9 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [isSavingSummary, setIsSavingSummary] = useState(false);
   const [regeneratingField, setRegeneratingField] =
     useState<RegeneratableSummaryField | null>(null);
+  const [isEditingTags, setIsEditingTags] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+  const [isSavingTags, setIsSavingTags] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -236,6 +251,45 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   function cancelSummaryEdit() {
     setEditingField(null);
     setSummaryDraft("");
+  }
+
+  function startTagEdit() {
+    setError("");
+    setIsEditingTags(true);
+    setTagDraft((meeting?.tags || []).join(", "));
+  }
+
+  function cancelTagEdit() {
+    setIsEditingTags(false);
+    setTagDraft("");
+  }
+
+  async function saveTags() {
+    if (!meeting || isSavingTags) {
+      return;
+    }
+
+    setIsSavingTags(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/meetings/${params.id}/tags`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: draftToTags(tagDraft) }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await getApiErrorMessage(response));
+      }
+
+      setMeeting((await response.json()) as Meeting);
+      cancelTagEdit();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save tags.");
+    } finally {
+      setIsSavingTags(false);
+    }
   }
 
   async function saveSummaryEdit(field: EditableSummaryField) {
@@ -367,6 +421,15 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
             </span>
             <span className="pill">{meeting.source_type.replace("_", " ")}</span>
             {output ? <span className="pill">{output.model}</span> : null}
+            {meeting.tags?.map((tag) => (
+              <Link
+                className="pill tag-pill"
+                href={`/meetings?tag=${encodeURIComponent(tag)}`}
+                key={tag}
+              >
+                {tag}
+              </Link>
+            ))}
           </div>
         </div>
         <div className="actions">
@@ -699,6 +762,66 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
         </div>
 
         <aside className="section-stack">
+          <section className="panel">
+            <div className="section-heading compact">
+              <div>
+                <p className="eyebrow">Metadata</p>
+                <h3>Tags</h3>
+              </div>
+              {!isEditingTags ? (
+                <button
+                  className="button subtle compact-button"
+                  onClick={startTagEdit}
+                  type="button"
+                >
+                  Edit
+                </button>
+              ) : null}
+            </div>
+            {isEditingTags ? (
+              <div className="summary-edit-form">
+                <input
+                  className="input"
+                  onChange={(event) => setTagDraft(event.target.value)}
+                  placeholder="customer-call, product, sprint"
+                  value={tagDraft}
+                />
+                <div className="actions inline-actions">
+                  <button
+                    className="button primary"
+                    disabled={isSavingTags}
+                    onClick={() => void saveTags()}
+                    type="button"
+                  >
+                    {isSavingTags ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    className="button"
+                    disabled={isSavingTags}
+                    onClick={cancelTagEdit}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : meeting.tags?.length ? (
+              <div className="meta-row">
+                {meeting.tags.map((tag) => (
+                  <Link
+                    className="pill tag-pill"
+                    href={`/meetings?tag=${encodeURIComponent(tag)}`}
+                    key={tag}
+                  >
+                    {tag}
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="helper">No tags saved for this meeting.</p>
+            )}
+          </section>
+
           {quality ? (
             <section className={`panel quality-panel ${quality.status || "good"}`}>
               <div className="section-heading compact">

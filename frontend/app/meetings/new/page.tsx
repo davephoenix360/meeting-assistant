@@ -26,6 +26,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
 export default function NewMeeting() {
   const [title, setTitle] = useState("");
+  const [tags, setTags] = useState("");
   const [workspaceId, setWorkspaceId] = useState("1");
   const [inputMode, setInputMode] = useState<InputMode>("transcript");
   const [transcript, setTranscript] = useState("");
@@ -49,6 +50,18 @@ export default function NewMeeting() {
     Math.round((transcriptStats.words / 600) * 100),
   );
   const fileSize = file ? file.size / 1024 / 1024 : 0;
+  const parsedTags = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tags
+            .split(",")
+            .map((tag) => tag.trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      ).slice(0, 12),
+    [tags],
+  );
 
   async function submit() {
     if (!canSubmit || isSubmitting) {
@@ -63,6 +76,7 @@ export default function NewMeeting() {
         title: title.trim(),
         workspace_id: Number(workspaceId),
         source_type: inputMode === "transcript" ? "transcript" : "upload",
+        tags: parsedTags,
       });
 
       if (inputMode === "transcript") {
@@ -153,6 +167,21 @@ export default function NewMeeting() {
               value={workspaceId}
               onChange={(event) => setWorkspaceId(event.target.value)}
             />
+          </label>
+
+          <label className="field">
+            <span className="label">Tags</span>
+            <input
+              className="input"
+              onChange={(event) => setTags(event.target.value)}
+              placeholder="customer-call, product, sprint"
+              value={tags}
+            />
+            {parsedTags.length ? (
+              <span className="helper">
+                {parsedTags.length} tag{parsedTags.length === 1 ? "" : "s"} will be saved.
+              </span>
+            ) : null}
           </label>
 
           {inputMode === "transcript" ? (

@@ -35,7 +35,7 @@ export default async function SearchPage({ searchParams }: Props) {
           <p className="eyebrow">Memory</p>
           <h2>Search</h2>
           <p className="lead">
-            Find meetings, transcripts, AI notes, and action items from one place.
+            Find meetings, tags, transcripts, AI notes, and action items from one place.
           </p>
         </div>
         <div className="actions">
@@ -86,8 +86,8 @@ export default async function SearchPage({ searchParams }: Props) {
             <div className="empty-inner">
               <h3>No matches found</h3>
               <p className="helper">
-                Search checks meeting titles, transcripts, AI notes, and action
-                item text.
+                Search checks meeting titles, tags, transcripts, AI notes, and
+                action item text.
               </p>
             </div>
           </div>

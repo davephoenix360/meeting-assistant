@@ -1,19 +1,32 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 
-class MeetingCreate(BaseModel):
+class TagMixin(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def default_tags(cls, value):
+        return value or []
+
+
+class MeetingCreate(TagMixin):
     workspace_id: int
     title: str
     source_type: str = "transcript"
     meeting_date: datetime | None = None
 
 
+class MeetingTagsUpdate(TagMixin):
+    pass
+
+
 class TranscriptIn(BaseModel):
     transcript_text: str
 
 
-class MeetingOut(BaseModel):
+class MeetingOut(TagMixin):
     id: int
     workspace_id: int
     title: str

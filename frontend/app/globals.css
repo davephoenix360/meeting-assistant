@@ -492,6 +492,10 @@ h3 {
   box-shadow: var(--shadow-soft);
 }
 
+.meeting-tags {
+  margin-top: 8px;
+}
+
 .meeting-row-main {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
@@ -899,6 +903,23 @@ h3 {
   padding: 0 10px;
   font-size: 12px;
   font-weight: 760;
+}
+
+.tag-pill {
+  background: var(--violet-soft);
+  color: var(--violet);
+}
+
+.tag-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tag-filter-bar .active {
+  background: var(--blue-soft);
+  color: var(--blue-strong);
 }
 
 .hero-preview .pill {

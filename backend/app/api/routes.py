@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.models import Meeting, MeetingStatus, MeetingAIOutput, ActionItem
 from app.schemas.meeting import (
     MeetingCreate,
+    MeetingTagsUpdate,
     MeetingOut,
     TranscriptIn,
     MeetingAIOutputOut,
@@ -68,6 +69,17 @@ def search_excerpt(text: str | None, query: str, *, max_length: int = 180) -> st
     return f"{prefix}{normalized[start:end]}{suffix}"
 
 
+def normalize_tags(tags: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for tag in tags or []:
+        next_tag = " ".join(str(tag).strip().lower().split())
+        if next_tag and next_tag not in seen:
+            normalized.append(next_tag[:40])
+            seen.add(next_tag)
+    return normalized[:12]
+
+
 def sync_generated_action_items(
     db: Session, meeting_id: int, summary: MeetingSummarySchema
 ) -> None:
@@ -87,7 +99,9 @@ def sync_generated_action_items(
 
 @router.post("/meetings", response_model=MeetingOut)
 def create_meeting(payload: MeetingCreate, db: Session = Depends(get_db)):
-    meeting = Meeting(**payload.model_dump())
+    data = payload.model_dump()
+    data["tags"] = normalize_tags(data.get("tags"))
+    meeting = Meeting(**data)
     db.add(meeting)
     db.commit()
     db.refresh(meeting)
@@ -95,8 +109,22 @@ def create_meeting(payload: MeetingCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/meetings", response_model=list[MeetingOut])
-def list_meetings(db: Session = Depends(get_db)):
-    return db.query(Meeting).order_by(Meeting.id.desc()).all()
+def list_meetings(tag: str | None = None, db: Session = Depends(get_db)):
+    query = db.query(Meeting)
+    if tag:
+        normalized = normalize_tags([tag])
+        if normalized:
+            query = query.filter(cast(Meeting.tags, String).ilike(f"%{normalized[0]}%"))
+    return query.order_by(Meeting.id.desc()).all()
+
+
+@router.get("/tags", response_model=list[str])
+def list_tags(db: Session = Depends(get_db)):
+    tags: set[str] = set()
+    for row_tags in db.query(Meeting.tags).all():
+        for tag in normalize_tags(row_tags[0]):
+            tags.add(tag)
+    return sorted(tags)
 
 
 @router.get("/search", response_model=list[SearchResultOut])
@@ -114,6 +142,7 @@ def search(q: str, db: Session = Depends(get_db)):
             or_(
                 Meeting.title.ilike(pattern),
                 Meeting.transcript_text.ilike(pattern),
+                cast(Meeting.tags, String).ilike(pattern),
             )
         )
         .order_by(Meeting.updated_at.desc(), Meeting.id.desc())
@@ -122,15 +151,24 @@ def search(q: str, db: Session = Depends(get_db)):
     )
     for meeting in meetings:
         title_match = query.lower() in meeting.title.lower()
+        tag_match = any(query.lower() in tag for tag in normalize_tags(meeting.tags))
         results.append(
             SearchResultOut(
                 kind="meeting",
                 meeting_id=meeting.id,
                 meeting_title=meeting.title,
-                title=meeting.title if title_match else "Transcript match",
+                title=(
+                    meeting.title
+                    if title_match
+                    else "Tag match"
+                    if tag_match
+                    else "Transcript match"
+                ),
                 excerpt=(
                     meeting.title
                     if title_match
+                    else ", ".join(normalize_tags(meeting.tags))
+                    if tag_match
                     else search_excerpt(meeting.transcript_text, query)
                 ),
                 status=meeting.status.value if hasattr(meeting.status, "value") else str(meeting.status),
@@ -235,6 +273,19 @@ def set_transcript(
     meeting.transcript_confidence = None
     meeting.transcript_created_at = func.now()
     meeting.status = MeetingStatus.transcribed
+    db.commit()
+    db.refresh(meeting)
+    return meeting
+
+
+@router.patch("/meetings/{meeting_id}/tags", response_model=MeetingOut)
+def patch_meeting_tags(
+    meeting_id: int, payload: MeetingTagsUpdate, db: Session = Depends(get_db)
+):
+    meeting = db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(404)
+    meeting.tags = normalize_tags(payload.tags)
     db.commit()
     db.refresh(meeting)
     return meeting

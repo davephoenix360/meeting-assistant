@@ -7,6 +7,13 @@ type Meeting = {
   source_type: string;
   status: string;
   transcript_text?: string | null;
+  tags?: string[];
+};
+
+type Props = {
+  searchParams?: {
+    tag?: string;
+  };
 };
 
 const statusCopy: Record<string, string> = {
@@ -23,8 +30,15 @@ function formatSource(source: string) {
   return source.replace("_", " ");
 }
 
-export default async function MeetingsPage() {
-  const meetings = (await (await api("/meetings")).json()) as Meeting[];
+export default async function MeetingsPage({ searchParams }: Props) {
+  const activeTag = (searchParams?.tag || "").trim();
+  const meetingsPath = activeTag
+    ? `/meetings?tag=${encodeURIComponent(activeTag)}`
+    : "/meetings";
+  const [meetings, tags] = await Promise.all([
+    (await api(meetingsPath)).json() as Promise<Meeting[]>,
+    (await api("/tags")).json() as Promise<string[]>,
+  ]);
   const completed = meetings.filter((meeting) => meeting.status === "completed").length;
   const ready = meetings.filter((meeting) => meeting.status === "transcribed").length;
 
@@ -35,7 +49,7 @@ export default async function MeetingsPage() {
           <p className="eyebrow">Workspace</p>
           <h2>Meetings</h2>
           <p className="lead">
-            Review processed notes, continue drafts, or start a new transcript.
+            Review processed notes, continue drafts, or filter meeting memory by tag.
           </p>
         </div>
         <div className="actions">
@@ -69,8 +83,27 @@ export default async function MeetingsPage() {
             <p className="eyebrow">Library</p>
             <h3>Meeting history</h3>
           </div>
-          <span className="pill">{meetings.length} total</span>
+          <span className="pill">
+            {activeTag ? `${meetings.length} tagged` : `${meetings.length} total`}
+          </span>
         </div>
+
+        {tags.length ? (
+          <div className="tag-filter-bar" aria-label="Filter meetings by tag">
+            <Link className={`pill link-pill ${activeTag ? "" : "active"}`} href="/meetings">
+              All
+            </Link>
+            {tags.map((tag) => (
+              <Link
+                className={`pill link-pill ${activeTag === tag ? "active" : ""}`}
+                href={`/meetings?tag=${encodeURIComponent(tag)}`}
+                key={tag}
+              >
+                {tag}
+              </Link>
+            ))}
+          </div>
+        ) : null}
 
         {meetings.length === 0 ? (
           <div className="empty">
@@ -101,6 +134,19 @@ export default async function MeetingsPage() {
                         ? ` / ${meeting.transcript_text.length.toLocaleString()} characters`
                         : " / No transcript yet"}
                     </span>
+                    {meeting.tags?.length ? (
+                      <div className="meta-row meeting-tags">
+                        {meeting.tags.map((tag) => (
+                          <Link
+                            className="pill tag-pill"
+                            href={`/meetings?tag=${encodeURIComponent(tag)}`}
+                            key={tag}
+                          >
+                            {tag}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <span className={`status ${meeting.status}`}>
