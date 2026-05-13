@@ -134,6 +134,21 @@ class RelatedMeetingOut(BaseModel):
     excerpt: str
 
 
+class MeetingCalendarEventOut(BaseModel):
+    id: int
+    calendar_account_id: int
+    external_event_id: str
+    title: str
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    organizer_email: str | None = None
+    meeting_url: str | None = None
+    location: str | None = None
+    description: str | None = None
+    attendees: list[dict] = Field(default_factory=list)
+    artifacts: list[dict] = Field(default_factory=list)
+
+
 class TranscriptionProviderStatusOut(BaseModel):
     provider: str
     mode: str

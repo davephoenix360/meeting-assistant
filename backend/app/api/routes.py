@@ -33,6 +33,7 @@ from app.schemas.meeting import (
     ActionItemOut,
     SearchResultOut,
     RelatedMeetingOut,
+    MeetingCalendarEventOut,
     TranscriptionProviderStatusOut,
 )
 from app.schemas.summary import MeetingSummarySchema
@@ -263,6 +264,23 @@ def calendar_event_out(event: CalendarEvent) -> CalendarEventOut:
         raw=event.raw_json or {},
         created_at=event.created_at,
         updated_at=event.updated_at,
+    )
+
+
+def meeting_calendar_event_out(event: CalendarEvent) -> MeetingCalendarEventOut:
+    return MeetingCalendarEventOut(
+        id=event.id,
+        calendar_account_id=event.calendar_account_id,
+        external_event_id=event.external_event_id,
+        title=event.title,
+        starts_at=event.starts_at,
+        ends_at=event.ends_at,
+        organizer_email=event.organizer_email,
+        meeting_url=event.meeting_url,
+        location=event.location,
+        description=event.description,
+        attendees=event.attendees_json or [],
+        artifacts=event.artifacts_json or [],
     )
 
 
@@ -922,6 +940,21 @@ def get_meeting(meeting_id: int, db: Session = Depends(get_db)):
     if not meeting:
         raise HTTPException(404)
     return meeting
+
+
+@router.get(
+    "/meetings/{meeting_id}/calendar-event",
+    response_model=MeetingCalendarEventOut,
+)
+def get_meeting_calendar_event(meeting_id: int, db: Session = Depends(get_db)):
+    event = (
+        db.query(CalendarEvent)
+        .filter(CalendarEvent.imported_meeting_id == meeting_id)
+        .first()
+    )
+    if not event:
+        raise HTTPException(404)
+    return meeting_calendar_event_out(event)
 
 
 @router.get("/meetings/{meeting_id}/related", response_model=list[RelatedMeetingOut])

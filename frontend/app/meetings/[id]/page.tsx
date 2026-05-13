@@ -92,6 +92,21 @@ type RelatedMeeting = {
   excerpt: string;
 };
 
+type CalendarEvent = {
+  id: number;
+  calendar_account_id: number;
+  external_event_id: string;
+  title: string;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  organizer_email?: string | null;
+  meeting_url?: string | null;
+  location?: string | null;
+  description?: string | null;
+  attendees: Record<string, unknown>[];
+  artifacts: Record<string, unknown>[];
+};
+
 type TranscriptionStatus = {
   provider: string;
   mode: string;
@@ -197,10 +212,41 @@ function draftToTags(value: string) {
   ).slice(0, 12);
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "Not scheduled";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function attendeeLabel(attendee: Record<string, unknown>) {
+  const nested = attendee.emailAddress;
+  if (nested && typeof nested === "object") {
+    const email = (nested as Record<string, unknown>).address;
+    const name = (nested as Record<string, unknown>).name;
+    return String(email || name || "Attendee");
+  }
+  return String(
+    attendee.email ||
+      attendee.address ||
+      attendee.displayName ||
+      attendee.name ||
+      "Attendee",
+  );
+}
+
+function artifactUrl(artifact: Record<string, unknown>) {
+  return String(artifact.url || artifact.fileUrl || "");
+}
+
 export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [output, setOutput] = useState<AIOutput | null>(null);
   const [relatedMeetings, setRelatedMeetings] = useState<RelatedMeeting[]>([]);
+  const [calendarEvent, setCalendarEvent] = useState<CalendarEvent | null>(null);
   const [transcriptionStatus, setTranscriptionStatus] =
     useState<TranscriptionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -233,6 +279,14 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       );
     } catch {
       setRelatedMeetings([]);
+    }
+
+    try {
+      setCalendarEvent(
+        await getJson<CalendarEvent>(`/meetings/${params.id}/calendar-event`),
+      );
+    } catch {
+      setCalendarEvent(null);
     }
 
     try {
@@ -820,6 +874,67 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                   : "No transcript has been added.")}
             </div>
           </article>
+
+          {calendarEvent ? (
+            <article className="panel calendar-context-panel">
+              <div className="section-heading compact">
+                <div>
+                  <p className="eyebrow">Calendar source</p>
+                  <h3>{calendarEvent.title}</h3>
+                </div>
+                <span className="status completed">Linked</span>
+              </div>
+              <div className="calendar-context-grid">
+                <div>
+                  <span className="metric-label">Starts</span>
+                  <strong>{formatDateTime(calendarEvent.starts_at)}</strong>
+                </div>
+                <div>
+                  <span className="metric-label">Ends</span>
+                  <strong>{formatDateTime(calendarEvent.ends_at)}</strong>
+                </div>
+              </div>
+              <div className="meta-row">
+                {calendarEvent.organizer_email ? (
+                  <span className="pill">Organizer: {calendarEvent.organizer_email}</span>
+                ) : null}
+                {calendarEvent.location ? (
+                  <span className="pill">{calendarEvent.location}</span>
+                ) : null}
+                {calendarEvent.meeting_url ? (
+                  <a className="pill link-pill" href={calendarEvent.meeting_url}>
+                    Meeting link
+                  </a>
+                ) : null}
+              </div>
+              {calendarEvent.attendees.length ? (
+                <div className="calendar-chip-list">
+                  {calendarEvent.attendees.slice(0, 8).map((attendee, index) => (
+                    <span className="pill" key={`${attendeeLabel(attendee)}-${index}`}>
+                      {attendeeLabel(attendee)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {calendarEvent.artifacts.length ? (
+                <div className="calendar-artifact-list">
+                  {calendarEvent.artifacts.map((artifact, index) => {
+                    const url = artifactUrl(artifact);
+                    return url ? (
+                      <a
+                        className="related-item"
+                        href={url}
+                        key={`${url}-${index}`}
+                      >
+                        <strong>{String(artifact.title || artifact.type || "Artifact")}</strong>
+                        <span className="helper">{url}</span>
+                      </a>
+                    ) : null;
+                  })}
+                </div>
+              ) : null}
+            </article>
+          ) : null}
         </div>
 
         <aside className="section-stack">
