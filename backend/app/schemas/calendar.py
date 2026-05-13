@@ -101,6 +101,15 @@ class CalendarEventCreate(BaseModel):
         return value or {}
 
 
+class CalendarEventMeetingCreate(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def default_tags(cls, value):
+        return value or []
+
+
 class CalendarEventOut(BaseModel):
     id: int
     workspace_id: int

@@ -15,10 +15,13 @@ Calendar, Microsoft Graph, Outlook, and manual imports can share the same produc
 - Build OAuth authorization URLs with `GET /api/calendar/oauth/{provider}/start`.
 - Receive OAuth callback codes, exchange them for tokens, and store encrypted token values at `GET /api/calendar/oauth/{provider}/callback`.
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
+- Create linked meeting records from imported events with `POST /api/calendar/events/{id}/create-meeting`.
 
 Provider event sync fetches Google Calendar and Microsoft Graph events with the
 stored access token and upserts them into `calendar_events`. Sync refreshes stored
 access tokens automatically when they are expired or rejected with `401`.
+Imported events can create meeting records. The event remains linked through
+`calendar_events.imported_meeting_id`.
 
 ## What You Will Need For External Providers
 

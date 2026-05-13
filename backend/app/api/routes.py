@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.models import (
     Meeting,
     MeetingStatus,
+    SourceType,
     MeetingAIOutput,
     MeetingSavedView,
     CalendarAccount,
@@ -39,6 +40,7 @@ from app.schemas.calendar import (
     CalendarAccountCreate,
     CalendarAccountOut,
     CalendarEventCreate,
+    CalendarEventMeetingCreate,
     CalendarEventOut,
     CalendarOAuthStartOut,
     CalendarProviderStatusOut,
@@ -296,6 +298,51 @@ def upsert_calendar_event(
     event.artifacts_json = payload.get("artifacts") or []
     event.raw_json = payload.get("raw") or {}
     return event, created
+
+
+def meeting_source_from_calendar_event(event: CalendarEvent) -> SourceType:
+    account = event.raw_json.get("provider") if isinstance(event.raw_json, dict) else None
+    event_text = " ".join(
+        str(value or "")
+        for value in [event.meeting_url, event.location, event.description, account]
+    ).lower()
+    if "teams.microsoft" in event_text or "teams" in event_text:
+        return SourceType.teams
+    if "meet.google" in event_text or "google" in event_text:
+        return SourceType.google_meet
+    if "zoom.us" in event_text or "zoom" in event_text:
+        return SourceType.zoom
+    return SourceType.upload
+
+
+def calendar_event_context(event: CalendarEvent) -> str | None:
+    lines: list[str] = []
+    if event.starts_at:
+        lines.append(f"Scheduled: {event.starts_at.isoformat()}")
+    if event.organizer_email:
+        lines.append(f"Organizer: {event.organizer_email}")
+    if event.meeting_url:
+        lines.append(f"Meeting URL: {event.meeting_url}")
+    if event.location:
+        lines.append(f"Location: {event.location}")
+    attendees = event.attendees_json or []
+    if attendees:
+        attendee_values: list[str] = []
+        for attendee in attendees[:12]:
+            if isinstance(attendee, dict):
+                email = attendee.get("email") or attendee.get("address")
+                nested = attendee.get("emailAddress")
+                if isinstance(nested, dict):
+                    email = email or nested.get("address")
+                name = attendee.get("displayName") or attendee.get("name")
+                attendee_values.append(str(email or name or attendee))
+            else:
+                attendee_values.append(str(attendee))
+        lines.append("Attendees: " + ", ".join(attendee_values))
+    if event.description:
+        lines.append("Description:")
+        lines.append(event.description[:4000])
+    return "\n".join(lines) if lines else None
 
 
 def sync_generated_action_items(
@@ -723,6 +770,46 @@ def import_calendar_event(
             409,
             "Calendar event already exists for this account and external event ID.",
         )
+    db.refresh(event)
+    return calendar_event_out(event)
+
+
+@router.post("/calendar/events/{event_id}/create-meeting", response_model=CalendarEventOut)
+def create_meeting_from_calendar_event(
+    event_id: int,
+    payload: CalendarEventMeetingCreate | None = None,
+    db: Session = Depends(get_db),
+):
+    event = db.get(CalendarEvent, event_id)
+    if not event:
+        raise HTTPException(404)
+    if event.imported_meeting_id:
+        db.refresh(event)
+        return calendar_event_out(event)
+
+    tags = normalize_tags((payload.tags if payload else []) + ["calendar"])
+    meeting = Meeting(
+        workspace_id=event.workspace_id,
+        title=event.title,
+        source_type=meeting_source_from_calendar_event(event),
+        meeting_date=event.starts_at,
+        status=MeetingStatus.created,
+        tags=tags,
+        transcript_text=calendar_event_context(event),
+        transcript_source="calendar",
+        transcript_provider="calendar",
+        transcript_model=None,
+        transcript_language=None,
+        transcript_confidence=None,
+        transcript_created_at=func.now(),
+    )
+    if meeting.transcript_text:
+        meeting.status = MeetingStatus.transcribed
+
+    db.add(meeting)
+    db.flush()
+    event.imported_meeting_id = meeting.id
+    db.commit()
     db.refresh(event)
     return calendar_event_out(event)
 

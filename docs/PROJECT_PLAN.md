@@ -70,6 +70,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Calendar accounts and imported calendar events have provider-neutral backend models and a workspace UI.
 - Calendar integration has provider status, OAuth URL, callback token exchange, encrypted token storage, and Google/Microsoft event sync.
 - Calendar provider sync refreshes expired or rejected access tokens with stored refresh tokens.
+- Imported calendar events can create linked meeting records with calendar context attached.
 - Transcript provenance metadata is persisted and displayed for pasted and transcribed meetings.
 - Workspace search spans meetings, transcripts, AI summaries, and action items.
 - OpenRouter provider implementation exists.
@@ -131,7 +132,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] OAuth token exchange and encrypted token storage.
 - [x] Provider calendar event sync.
 - [x] Token refresh handling for expired calendar access tokens.
-- [ ] Attach imported artifacts to meetings.
+- [x] Attach imported calendar events/artifacts to meetings.
 - [ ] Post-meeting transcript/recording imports where APIs allow.
 
 ### Phase 6: Meeting Platform Integrations
@@ -154,7 +155,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Attach imported artifacts to meetings.
-2. Add calendar-based meeting creation/import UI.
-3. Improve synced event filtering and conflict handling.
-4. Add recurring event and pagination depth controls.
+1. Improve calendar-created meeting detail context and artifact display.
+2. Improve synced event filtering and conflict handling.
+3. Add recurring event and pagination depth controls.
+4. Add calendar import automation controls.

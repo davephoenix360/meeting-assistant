@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { API_BASE_URL } from "../../lib/api";
 
@@ -111,6 +112,7 @@ export function CalendarClient({
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [syncingAccountId, setSyncingAccountId] = useState<number | null>(null);
+  const [creatingMeetingId, setCreatingMeetingId] = useState<number | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -220,6 +222,24 @@ export function CalendarClient({
       setError(err instanceof Error ? err.message : "Unable to import calendar event.");
     } finally {
       setIsSavingEvent(false);
+    }
+  }
+
+  async function createMeetingFromEvent(eventId: number) {
+    setCreatingMeetingId(eventId);
+    setError("");
+    try {
+      const event = await postJson<CalendarEvent>(
+        `/calendar/events/${eventId}/create-meeting`,
+        { tags: ["calendar"] },
+      );
+      setEvents((current) =>
+        current.map((item) => (item.id === event.id ? event : item)),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create meeting.");
+    } finally {
+      setCreatingMeetingId(null);
     }
   }
 
@@ -428,9 +448,23 @@ export function CalendarClient({
                       </a>
                     ) : null}
                     {event.imported_meeting_id ? (
-                      <span className="status completed">Meeting created</span>
+                      <Link
+                        className="pill link-pill"
+                        href={`/meetings/${event.imported_meeting_id}`}
+                      >
+                        Open meeting
+                      </Link>
                     ) : (
-                      <span className="status uploaded">Event only</span>
+                      <button
+                        className="button subtle compact-button"
+                        disabled={creatingMeetingId === event.id}
+                        onClick={() => void createMeetingFromEvent(event.id)}
+                        type="button"
+                      >
+                        {creatingMeetingId === event.id
+                          ? "Creating..."
+                          : "Create meeting"}
+                      </button>
                     )}
                   </div>
                 </article>
