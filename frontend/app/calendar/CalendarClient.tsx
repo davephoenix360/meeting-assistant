@@ -172,8 +172,15 @@ export function CalendarClient({
         status: string;
         message: string;
         events_imported: number;
+        events_updated?: number;
       }>(`/calendar/accounts/${nextAccountId}/sync`);
       setSyncMessage(`${result.status}: ${result.message}`);
+      if (result.status === "synced") {
+        const response = await fetch(`${API_BASE_URL}/calendar/events?workspace_id=1`);
+        if (response.ok) {
+          setEvents((await response.json()) as CalendarEvent[]);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sync account.");
     } finally {

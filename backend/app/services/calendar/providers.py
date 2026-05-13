@@ -1,13 +1,14 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from email.utils import parseaddr
+import re
 from urllib.parse import urlencode
 
 import httpx
 
 from app.core.config import settings
 from app.models.models import CalendarAccount, CalendarAccountToken
-from app.services.calendar.token_crypto import encrypt_token
+from app.services.calendar.token_crypto import decrypt_token, encrypt_token
 
 
 GOOGLE_CALENDAR_SCOPES = [
@@ -235,7 +236,168 @@ def build_calendar_account_token(
     )
 
 
-def sync_calendar_account(account: CalendarAccount, token: CalendarAccountToken | None = None) -> dict:
+async def fetch_provider_calendar_events(
+    account: CalendarAccount,
+    token: CalendarAccountToken,
+    *,
+    days_back: int = 7,
+    days_forward: int = 30,
+    limit: int = 50,
+) -> list[dict]:
+    provider = "microsoft" if account.provider == "outlook" else account.provider
+    config = calendar_provider_config(provider)
+    access_token = decrypt_token(token.encrypted_access_token)
+    if not access_token:
+        raise ValueError("Calendar account is missing an access token.")
+
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days_back)
+    end = now + timedelta(days=days_forward)
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        if provider == "google":
+            response = await client.get(
+                config.events_url,
+                headers=headers,
+                params={
+                    "timeMin": start.isoformat(),
+                    "timeMax": end.isoformat(),
+                    "singleEvents": "true",
+                    "orderBy": "startTime",
+                    "maxResults": min(limit, 250),
+                },
+            )
+            response.raise_for_status()
+            return [
+                normalize_google_event(item)
+                for item in response.json().get("items", [])
+                if item.get("id")
+            ]
+
+        if provider == "microsoft":
+            response = await client.get(
+                config.events_url,
+                headers={
+                    **headers,
+                    "Prefer": 'outlook.timezone="UTC"',
+                },
+                params={
+                    "$top": min(limit, 50),
+                    "$orderby": "start/dateTime",
+                    "$select": (
+                        "id,subject,bodyPreview,body,start,end,organizer,attendees,"
+                        "location,webLink,onlineMeetingUrl,onlineMeeting"
+                    ),
+                },
+            )
+            response.raise_for_status()
+            return [
+                normalize_microsoft_event(item)
+                for item in response.json().get("value", [])
+                if item.get("id")
+            ]
+
+    raise ValueError(f"Unsupported calendar sync provider: {account.provider}")
+
+
+def normalize_google_event(raw: dict) -> dict:
+    organizer = raw.get("organizer") or {}
+    description = raw.get("description")
+    meeting_url = (
+        ((raw.get("conferenceData") or {}).get("entryPoints") or [{}])[0].get("uri")
+        or raw.get("hangoutLink")
+        or first_url(description)
+        or raw.get("htmlLink")
+    )
+    return {
+        "external_event_id": raw["id"],
+        "title": raw.get("summary") or "Untitled calendar event",
+        "starts_at": parse_google_datetime(raw.get("start") or {}),
+        "ends_at": parse_google_datetime(raw.get("end") or {}),
+        "organizer_email": organizer.get("email"),
+        "meeting_url": meeting_url,
+        "location": raw.get("location"),
+        "description": description,
+        "attendees": raw.get("attendees") or [],
+        "artifacts": calendar_artifacts(raw, meeting_url),
+        "raw": raw,
+    }
+
+
+def normalize_microsoft_event(raw: dict) -> dict:
+    organizer_email = ((raw.get("organizer") or {}).get("emailAddress") or {}).get("address")
+    description = (raw.get("body") or {}).get("content") or raw.get("bodyPreview")
+    meeting_url = (
+        ((raw.get("onlineMeeting") or {}).get("joinUrl"))
+        or raw.get("onlineMeetingUrl")
+        or first_url(description)
+        or raw.get("webLink")
+    )
+    return {
+        "external_event_id": raw["id"],
+        "title": raw.get("subject") or "Untitled calendar event",
+        "starts_at": parse_microsoft_datetime(raw.get("start") or {}),
+        "ends_at": parse_microsoft_datetime(raw.get("end") or {}),
+        "organizer_email": organizer_email,
+        "meeting_url": meeting_url,
+        "location": ((raw.get("location") or {}).get("displayName")),
+        "description": description,
+        "attendees": raw.get("attendees") or [],
+        "artifacts": calendar_artifacts(raw, meeting_url),
+        "raw": raw,
+    }
+
+
+def parse_google_datetime(value: dict) -> datetime | None:
+    raw = value.get("dateTime") or value.get("date")
+    return parse_calendar_datetime(raw)
+
+
+def parse_microsoft_datetime(value: dict) -> datetime | None:
+    return parse_calendar_datetime(value.get("dateTime"))
+
+
+def parse_calendar_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return datetime.combine(date.fromisoformat(value), time.min, tzinfo=timezone.utc)
+    normalized = value.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def first_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    match = re.search(r"https?://[^\s<>\"]+", value)
+    return match.group(0) if match else None
+
+
+def calendar_artifacts(raw: dict, meeting_url: str | None) -> list[dict]:
+    artifacts: list[dict] = []
+    if meeting_url:
+        artifacts.append({"type": "meeting_url", "url": meeting_url})
+    attachments = raw.get("attachments") or []
+    for attachment in attachments:
+        link = attachment.get("fileUrl") or attachment.get("url")
+        if link:
+            artifacts.append(
+                {
+                    "type": "attachment",
+                    "url": link,
+                    "title": attachment.get("title") or attachment.get("name"),
+                }
+            )
+    return artifacts
+
+
+def sync_calendar_account(
+    account: CalendarAccount, token: CalendarAccountToken | None = None
+) -> dict:
     if account.provider == "local":
         return {
             "account_id": account.id,
@@ -268,9 +430,7 @@ def sync_calendar_account(account: CalendarAccount, token: CalendarAccountToken 
     return {
         "account_id": account.id,
         "provider": config.provider,
-        "status": "not_connected",
-        "message": (
-            "Token storage is available. Provider event fetching will be added next."
-        ),
+        "status": "ready",
+        "message": "Calendar account has stored tokens and is ready for event sync.",
         "events_imported": 0,
     }

@@ -16,8 +16,9 @@ Calendar, Microsoft Graph, Outlook, and manual imports can share the same produc
 - Receive OAuth callback codes, exchange them for tokens, and store encrypted token values at `GET /api/calendar/oauth/{provider}/callback`.
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
 
-Provider event sync is still bounded. Token storage exists, but fetching provider
-events is the next implementation step.
+Provider event sync fetches Google Calendar and Microsoft Graph events with the
+stored access token and upserts them into `calendar_events`. Expired-token refresh
+handling is still a follow-up item.
 
 ## What You Will Need For External Providers
 

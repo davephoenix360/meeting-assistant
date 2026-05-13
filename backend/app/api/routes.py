@@ -61,6 +61,7 @@ from app.services.calendar.providers import (
     build_calendar_authorization_url,
     exchange_calendar_oauth_code,
     fetch_calendar_account_profile,
+    fetch_provider_calendar_events,
     list_calendar_provider_statuses,
     sync_calendar_account,
 )
@@ -258,6 +259,40 @@ def calendar_event_out(event: CalendarEvent) -> CalendarEventOut:
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
+
+
+def upsert_calendar_event(
+    db: Session,
+    account: CalendarAccount,
+    payload: dict,
+) -> tuple[CalendarEvent, bool]:
+    event = (
+        db.query(CalendarEvent)
+        .filter(CalendarEvent.calendar_account_id == account.id)
+        .filter(CalendarEvent.external_event_id == payload["external_event_id"])
+        .first()
+    )
+    created = event is None
+    if event is None:
+        event = CalendarEvent(
+            workspace_id=account.workspace_id,
+            calendar_account_id=account.id,
+            external_event_id=payload["external_event_id"],
+            title=payload["title"][:255],
+        )
+        db.add(event)
+
+    event.title = payload["title"][:255]
+    event.starts_at = payload.get("starts_at")
+    event.ends_at = payload.get("ends_at")
+    event.organizer_email = payload.get("organizer_email")
+    event.meeting_url = payload.get("meeting_url")
+    event.location = payload.get("location")
+    event.description = payload.get("description")
+    event.attendees_json = payload.get("attendees") or []
+    event.artifacts_json = payload.get("artifacts") or []
+    event.raw_json = payload.get("raw") or {}
+    return event, created
 
 
 def sync_generated_action_items(
@@ -539,7 +574,7 @@ def create_calendar_account(
 
 
 @router.post("/calendar/accounts/{account_id}/sync", response_model=CalendarSyncResultOut)
-def sync_calendar_account_route(account_id: int, db: Session = Depends(get_db)):
+async def sync_calendar_account_route(account_id: int, db: Session = Depends(get_db)):
     account = db.get(CalendarAccount, account_id)
     if not account:
         raise HTTPException(404)
@@ -549,10 +584,57 @@ def sync_calendar_account_route(account_id: int, db: Session = Depends(get_db)):
         .first()
     )
     result = sync_calendar_account(account, token)
-    if result["status"] not in {"not_configured", "not_connected"}:
-        account.last_sync_at = func.now()
-        db.commit()
-    return result
+    if result["status"] != "ready":
+        if result["status"] not in {"not_configured", "not_connected"}:
+            account.last_sync_at = func.now()
+            db.commit()
+        return result
+
+    try:
+        normalized_events = await fetch_provider_calendar_events(account, token)
+    except TokenEncryptionError as e:
+        raise HTTPException(500, str(e))
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise HTTPException(
+                401,
+                "Calendar access token was rejected. Reconnect the calendar account.",
+            )
+        raise HTTPException(
+            e.response.status_code,
+            f"{account.provider} calendar sync failed: {e.response.text}",
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(502, f"{account.provider} calendar sync request failed: {e}")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    imported = 0
+    updated = 0
+    for event_payload in normalized_events:
+        _, created = upsert_calendar_event(db, account, event_payload)
+        if created:
+            imported += 1
+        else:
+            updated += 1
+
+    account.last_sync_at = func.now()
+    account.provider_metadata_json = {
+        **(account.provider_metadata_json or {}),
+        "last_sync_result": {
+            "imported": imported,
+            "updated": updated,
+        },
+    }
+    db.commit()
+    return {
+        "account_id": account.id,
+        "provider": account.provider,
+        "status": "synced",
+        "message": f"Imported {imported} and updated {updated} calendar event(s).",
+        "events_imported": imported,
+        "events_updated": updated,
+    }
 
 
 @router.post("/calendar/accounts/{account_id}/disconnect", response_model=CalendarAccountOut)

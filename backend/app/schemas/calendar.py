@@ -148,3 +148,4 @@ class CalendarSyncResultOut(BaseModel):
     status: str
     message: str
     events_imported: int = 0
+    events_updated: int = 0
