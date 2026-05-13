@@ -236,6 +236,64 @@ def build_calendar_account_token(
     )
 
 
+async def refresh_calendar_access_token(
+    provider: str,
+    token: CalendarAccountToken,
+) -> CalendarAccountToken:
+    config = calendar_provider_config(provider)
+    if not config.configured:
+        raise ValueError(f"{config.label} OAuth credentials are not configured.")
+
+    refresh_token = decrypt_token(token.encrypted_refresh_token)
+    if not refresh_token:
+        raise ValueError("Calendar account is missing a refresh token.")
+
+    payload = {
+        "client_id": config.client_id,
+        "client_secret": config.client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+    if config.provider == "microsoft":
+        payload["scope"] = " ".join(config.scopes)
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(config.token_url, data=payload)
+        response.raise_for_status()
+
+    return build_calendar_account_token(
+        response.json(),
+        existing_refresh_token=refresh_token,
+        existing_encrypted_refresh_token=token.encrypted_refresh_token,
+    )
+
+
+def apply_refreshed_calendar_token(
+    target: CalendarAccountToken,
+    refreshed: CalendarAccountToken,
+) -> None:
+    target.token_type = refreshed.token_type
+    target.encrypted_access_token = refreshed.encrypted_access_token
+    target.encrypted_refresh_token = refreshed.encrypted_refresh_token
+    target.expires_at = refreshed.expires_at
+    target.scopes_json = refreshed.scopes_json
+    target.provider_token_json = refreshed.provider_token_json
+
+
+def calendar_access_token_needs_refresh(
+    token: CalendarAccountToken,
+    *,
+    skew_seconds: int = 120,
+) -> bool:
+    if not token.expires_at:
+        return False
+
+    expires_at = token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= datetime.now(timezone.utc) + timedelta(seconds=skew_seconds)
+
+
 async def fetch_provider_calendar_events(
     account: CalendarAccount,
     token: CalendarAccountToken,

@@ -17,8 +17,8 @@ Calendar, Microsoft Graph, Outlook, and manual imports can share the same produc
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
 
 Provider event sync fetches Google Calendar and Microsoft Graph events with the
-stored access token and upserts them into `calendar_events`. Expired-token refresh
-handling is still a follow-up item.
+stored access token and upserts them into `calendar_events`. Sync refreshes stored
+access tokens automatically when they are expired or rejected with `401`.
 
 ## What You Will Need For External Providers
 

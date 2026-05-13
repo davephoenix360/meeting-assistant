@@ -149,3 +149,4 @@ class CalendarSyncResultOut(BaseModel):
     message: str
     events_imported: int = 0
     events_updated: int = 0
+    token_refreshed: bool = False

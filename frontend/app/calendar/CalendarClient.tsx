@@ -173,8 +173,13 @@ export function CalendarClient({
         message: string;
         events_imported: number;
         events_updated?: number;
+        token_refreshed?: boolean;
       }>(`/calendar/accounts/${nextAccountId}/sync`);
-      setSyncMessage(`${result.status}: ${result.message}`);
+      setSyncMessage(
+        `${result.status}: ${result.message}${
+          result.token_refreshed ? " Token refreshed." : ""
+        }`,
+      );
       if (result.status === "synced") {
         const response = await fetch(`${API_BASE_URL}/calendar/events?workspace_id=1`);
         if (response.ok) {

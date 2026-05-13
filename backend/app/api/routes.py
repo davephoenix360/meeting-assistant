@@ -57,12 +57,15 @@ from app.services.transcription.factory import (
     get_transcription_provider_status,
 )
 from app.services.calendar.providers import (
+    apply_refreshed_calendar_token,
     build_calendar_account_token,
     build_calendar_authorization_url,
+    calendar_access_token_needs_refresh,
     exchange_calendar_oauth_code,
     fetch_calendar_account_profile,
     fetch_provider_calendar_events,
     list_calendar_provider_statuses,
+    refresh_calendar_access_token,
     sync_calendar_account,
 )
 from app.services.calendar.token_crypto import TokenEncryptionError
@@ -590,20 +593,44 @@ async def sync_calendar_account_route(account_id: int, db: Session = Depends(get
             db.commit()
         return result
 
+    refreshed = False
     try:
+        if calendar_access_token_needs_refresh(token):
+            refreshed_token = await refresh_calendar_access_token(account.provider, token)
+            apply_refreshed_calendar_token(token, refreshed_token)
+            refreshed = True
+            db.commit()
         normalized_events = await fetch_provider_calendar_events(account, token)
     except TokenEncryptionError as e:
         raise HTTPException(500, str(e))
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
+            try:
+                refreshed_token = await refresh_calendar_access_token(account.provider, token)
+                apply_refreshed_calendar_token(token, refreshed_token)
+                refreshed = True
+                db.commit()
+                normalized_events = await fetch_provider_calendar_events(account, token)
+            except TokenEncryptionError as refresh_error:
+                raise HTTPException(500, str(refresh_error))
+            except httpx.HTTPStatusError as refresh_error:
+                raise HTTPException(
+                    refresh_error.response.status_code,
+                    "Calendar token refresh failed. Reconnect the calendar account. "
+                    f"Provider detail: {refresh_error.response.text}",
+                )
+            except httpx.RequestError as refresh_error:
+                raise HTTPException(
+                    502,
+                    f"{account.provider} calendar token refresh request failed: {refresh_error}",
+                )
+            except ValueError as refresh_error:
+                raise HTTPException(400, str(refresh_error))
+        else:
             raise HTTPException(
-                401,
-                "Calendar access token was rejected. Reconnect the calendar account.",
+                e.response.status_code,
+                f"{account.provider} calendar sync failed: {e.response.text}",
             )
-        raise HTTPException(
-            e.response.status_code,
-            f"{account.provider} calendar sync failed: {e.response.text}",
-        )
     except httpx.RequestError as e:
         raise HTTPException(502, f"{account.provider} calendar sync request failed: {e}")
     except ValueError as e:
@@ -624,6 +651,7 @@ async def sync_calendar_account_route(account_id: int, db: Session = Depends(get
         "last_sync_result": {
             "imported": imported,
             "updated": updated,
+            "token_refreshed": refreshed,
         },
     }
     db.commit()
@@ -634,6 +662,7 @@ async def sync_calendar_account_route(account_id: int, db: Session = Depends(get
         "message": f"Imported {imported} and updated {updated} calendar event(s).",
         "events_imported": imported,
         "events_updated": updated,
+        "token_refreshed": refreshed,
     }
 
 
