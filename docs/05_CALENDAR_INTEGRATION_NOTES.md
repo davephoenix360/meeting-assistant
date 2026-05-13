@@ -13,11 +13,11 @@ Calendar, Microsoft Graph, Outlook, and manual imports can share the same produc
 - List/import events with `GET /api/calendar/events` and `POST /api/calendar/events`.
 - Check provider readiness with `GET /api/calendar/providers`.
 - Build OAuth authorization URLs with `GET /api/calendar/oauth/{provider}/start`.
-- Receive OAuth callback codes at `GET /api/calendar/oauth/{provider}/callback`.
+- Receive OAuth callback codes, exchange them for tokens, and store encrypted token values at `GET /api/calendar/oauth/{provider}/callback`.
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
 
-OAuth callback handling is scaffolding only. It receives authorization codes, but
-does not exchange or persist tokens yet.
+Provider event sync is still bounded. Token storage exists, but fetching provider
+events is the next implementation step.
 
 ## What You Will Need For External Providers
 
@@ -28,7 +28,10 @@ does not exchange or persist tokens yet.
   - Google default: `https://www.googleapis.com/auth/calendar.events.readonly`.
   - Microsoft default: `Calendars.Read` plus `offline_access` for refresh tokens.
 - A test calendar account with real meeting links and realistic meeting titles.
-- A decision on token storage before production use. OAuth refresh tokens should be encrypted at rest.
+- `TOKEN_ENCRYPTION_KEY` configured before OAuth callbacks can store tokens.
+- A production decision on stronger managed key storage. The local implementation
+  encrypts token values before database persistence, but a hosted deployment should
+  use a managed secret/KMS approach.
 
 ## Environment Variables
 
@@ -38,6 +41,7 @@ does not exchange or persist tokens yet.
 - `MICROSOFT_CALENDAR_CLIENT_ID`
 - `MICROSOFT_CALENDAR_CLIENT_SECRET`
 - `MICROSOFT_CALENDAR_TENANT`
+- `TOKEN_ENCRYPTION_KEY`
 
 Check the latest Google and Microsoft provider docs before implementing OAuth because
 allowed redirect URLs, consent screen rules, and required scopes can change.

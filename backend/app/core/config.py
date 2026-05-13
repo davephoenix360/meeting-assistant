@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     microsoft_calendar_client_id: str | None = None
     microsoft_calendar_client_secret: str | None = None
     microsoft_calendar_tenant: str = "common"
+    token_encryption_key: str | None = None
     # Keep this as a simple string so pydantic-settings doesn't require JSON
     # parsing for list types in `.env`. Accepts either CSV or JSON array.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"

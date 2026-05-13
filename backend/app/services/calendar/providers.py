@@ -1,8 +1,13 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from email.utils import parseaddr
 from urllib.parse import urlencode
 
+import httpx
+
 from app.core.config import settings
-from app.models.models import CalendarAccount
+from app.models.models import CalendarAccount, CalendarAccountToken
+from app.services.calendar.token_crypto import encrypt_token
 
 
 GOOGLE_CALENDAR_SCOPES = [
@@ -128,13 +133,124 @@ def build_calendar_authorization_url(provider: str, *, workspace_id: int = 1) ->
     }
 
 
-def sync_calendar_account(account: CalendarAccount) -> dict:
+async def exchange_calendar_oauth_code(
+    provider: str,
+    *,
+    code: str,
+) -> dict:
+    config = calendar_provider_config(provider)
+    if not config.configured:
+        raise ValueError(f"{config.label} OAuth credentials are not configured.")
+
+    payload = {
+        "client_id": config.client_id,
+        "client_secret": config.client_secret,
+        "code": code,
+        "redirect_uri": config.redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    if config.provider == "google":
+        payload["access_type"] = "offline"
+    elif config.provider == "microsoft":
+        payload["scope"] = " ".join(config.scopes)
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(config.token_url, data=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def fetch_calendar_account_profile(provider: str, access_token: str) -> dict:
+    normalized = "microsoft" if provider == "outlook" else provider
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        if normalized == "google":
+            response = await client.get(
+                "https://openidconnect.googleapis.com/v1/userinfo",
+                headers=headers,
+            )
+        elif normalized == "microsoft":
+            response = await client.get(
+                "https://graph.microsoft.com/v1.0/me",
+                headers=headers,
+            )
+        else:
+            raise ValueError(f"Unsupported calendar profile provider: {provider}")
+        response.raise_for_status()
+        data = response.json()
+
+    if normalized == "google":
+        email = data.get("email")
+        display_name = data.get("name")
+    else:
+        email = data.get("mail") or data.get("userPrincipalName")
+        display_name = data.get("displayName")
+
+    parsed_email = parseaddr(str(email or ""))[1].lower()
+    if not parsed_email:
+        parsed_email = f"unknown-{normalized}@calendar.local"
+
+    return {
+        "account_email": parsed_email,
+        "display_name": display_name,
+        "raw": data,
+    }
+
+
+def build_calendar_account_token(
+    token_data: dict,
+    *,
+    existing_refresh_token: str | None = None,
+    existing_encrypted_refresh_token: str | None = None,
+) -> CalendarAccountToken:
+    expires_in = token_data.get("expires_in")
+    expires_at = None
+    if isinstance(expires_in, int):
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+    refresh_token = token_data.get("refresh_token") or existing_refresh_token
+    encrypted_refresh_token = (
+        encrypt_token(refresh_token)
+        if refresh_token
+        else existing_encrypted_refresh_token
+    )
+    scopes = str(token_data.get("scope") or "").split()
+    return CalendarAccountToken(
+        token_type=token_data.get("token_type"),
+        encrypted_access_token=encrypt_token(token_data.get("access_token")),
+        encrypted_refresh_token=encrypted_refresh_token,
+        expires_at=expires_at,
+        scopes_json=scopes,
+        provider_token_json={
+            key: value
+            for key, value in token_data.items()
+            if key
+            not in {
+                "access_token",
+                "refresh_token",
+                "id_token",
+            }
+        },
+    )
+
+
+def sync_calendar_account(account: CalendarAccount, token: CalendarAccountToken | None = None) -> dict:
     if account.provider == "local":
         return {
             "account_id": account.id,
             "provider": account.provider,
             "status": "skipped",
             "message": "Local/manual calendar accounts do not sync with an external provider.",
+            "events_imported": 0,
+        }
+
+    if token is None or not token.encrypted_refresh_token:
+        return {
+            "account_id": account.id,
+            "provider": account.provider,
+            "status": "not_connected",
+            "message": "Connect this calendar with OAuth before syncing events.",
             "events_imported": 0,
         }
 
@@ -154,8 +270,7 @@ def sync_calendar_account(account: CalendarAccount) -> dict:
         "provider": config.provider,
         "status": "not_connected",
         "message": (
-            "Provider sync boundary is ready, but OAuth token exchange and token "
-            "storage are intentionally not connected yet."
+            "Token storage is available. Provider event fetching will be added next."
         ),
         "events_imported": 0,
     }

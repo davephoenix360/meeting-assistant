@@ -107,6 +107,20 @@ class CalendarAccount(Base):
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class CalendarAccountToken(Base):
+    __tablename__ = "calendar_account_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    calendar_account_id: Mapped[int] = mapped_column(ForeignKey("calendar_accounts.id"), unique=True)
+    token_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    encrypted_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    encrypted_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scopes_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    provider_token_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class CalendarEvent(Base):
     __tablename__ = "calendar_events"
     id: Mapped[int] = mapped_column(primary_key=True)

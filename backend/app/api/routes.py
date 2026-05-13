@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
+import httpx
 from sqlalchemy import String, cast, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.models.models import (
     MeetingAIOutput,
     MeetingSavedView,
     CalendarAccount,
+    CalendarAccountToken,
     CalendarEvent,
     ActionItem,
 )
@@ -55,10 +57,14 @@ from app.services.transcription.factory import (
     get_transcription_provider_status,
 )
 from app.services.calendar.providers import (
+    build_calendar_account_token,
     build_calendar_authorization_url,
+    exchange_calendar_oauth_code,
+    fetch_calendar_account_profile,
     list_calendar_provider_statuses,
     sync_calendar_account,
 )
+from app.services.calendar.token_crypto import TokenEncryptionError
 import os
 import re
 
@@ -413,25 +419,102 @@ def start_calendar_oauth(provider: str, workspace_id: int = 1):
 
 
 @router.get("/calendar/oauth/{provider}/callback")
-def calendar_oauth_callback(
+async def calendar_oauth_callback(
     provider: str,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
+    db: Session = Depends(get_db),
 ):
     if error:
         raise HTTPException(400, f"{provider} OAuth failed: {error}")
     if not code:
         raise HTTPException(400, "OAuth callback missing authorization code")
 
+    workspace_id = 1
+    for part in (state or "").split("&"):
+        key, _, value = part.partition("=")
+        if key == "workspace_id" and value.isdigit():
+            workspace_id = int(value)
+
+    try:
+        token_data = await exchange_calendar_oauth_code(provider, code=code)
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise HTTPException(502, "OAuth provider did not return an access token")
+        profile = await fetch_calendar_account_profile(provider, access_token)
+    except TokenEncryptionError as e:
+        raise HTTPException(500, str(e))
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            e.response.status_code,
+            f"{provider} token exchange failed: {e.response.text}",
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(502, f"{provider} token exchange request failed: {e}")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    normalized_provider = "microsoft" if provider == "outlook" else provider
+    account = (
+        db.query(CalendarAccount)
+        .filter(CalendarAccount.workspace_id == workspace_id)
+        .filter(CalendarAccount.provider == normalized_provider)
+        .filter(CalendarAccount.account_email == profile["account_email"])
+        .first()
+    )
+    if account:
+        account.status = "connected"
+        account.display_name = profile.get("display_name") or account.display_name
+        account.provider_metadata_json = profile.get("raw") or {}
+    else:
+        account = CalendarAccount(
+            workspace_id=workspace_id,
+            provider=normalized_provider,
+            account_email=profile["account_email"],
+            display_name=profile.get("display_name"),
+            status="connected",
+            provider_metadata_json=profile.get("raw") or {},
+        )
+        db.add(account)
+        db.flush()
+
+    existing_token = (
+        db.query(CalendarAccountToken)
+        .filter(CalendarAccountToken.calendar_account_id == account.id)
+        .first()
+    )
+    try:
+        token = build_calendar_account_token(
+            token_data,
+            existing_encrypted_refresh_token=(
+                existing_token.encrypted_refresh_token if existing_token else None
+            ),
+        )
+    except TokenEncryptionError as e:
+        raise HTTPException(500, str(e))
+
+    account.scopes_json = token.scopes_json
+    if existing_token:
+        existing_token.token_type = token.token_type
+        existing_token.encrypted_access_token = token.encrypted_access_token
+        existing_token.encrypted_refresh_token = token.encrypted_refresh_token
+        existing_token.expires_at = token.expires_at
+        existing_token.scopes_json = token.scopes_json
+        existing_token.provider_token_json = token.provider_token_json
+    else:
+        token.calendar_account_id = account.id
+        db.add(token)
+
+    db.commit()
+    db.refresh(account)
     return {
         "provider": provider,
         "state": state,
-        "status": "received_code",
-        "message": (
-            "OAuth callback scaffolding is wired. Token exchange and encrypted "
-            "refresh-token storage will be added before real provider sync."
-        ),
+        "status": "connected",
+        "account_id": account.id,
+        "account_email": account.account_email,
+        "message": "Calendar OAuth token exchange completed and tokens were stored encrypted.",
     }
 
 
@@ -460,7 +543,12 @@ def sync_calendar_account_route(account_id: int, db: Session = Depends(get_db)):
     account = db.get(CalendarAccount, account_id)
     if not account:
         raise HTTPException(404)
-    result = sync_calendar_account(account)
+    token = (
+        db.query(CalendarAccountToken)
+        .filter(CalendarAccountToken.calendar_account_id == account.id)
+        .first()
+    )
+    result = sync_calendar_account(account, token)
     if result["status"] not in {"not_configured", "not_connected"}:
         account.last_sync_at = func.now()
         db.commit()
