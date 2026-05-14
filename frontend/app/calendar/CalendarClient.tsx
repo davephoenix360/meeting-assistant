@@ -46,6 +46,16 @@ export type CalendarProviderStatus = {
   events_url: string;
 };
 
+type CalendarBulkMeetingResult = {
+  requested: number;
+  eligible: number;
+  created: number;
+  skipped_existing: number;
+  skipped_missing_link: number;
+  skipped_missing_event: number;
+  events: CalendarEvent[];
+};
+
 type Props = {
   initialAccounts: CalendarAccount[];
   initialEvents: CalendarEvent[];
@@ -152,6 +162,8 @@ export function CalendarClient({
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [syncingAccountId, setSyncingAccountId] = useState<number | null>(null);
   const [creatingMeetingId, setCreatingMeetingId] = useState<number | null>(null);
+  const [isBulkCreating, setIsBulkCreating] = useState(false);
+  const [bulkRequireMeetingLink, setBulkRequireMeetingLink] = useState(true);
   const [syncDaysBack, setSyncDaysBack] = useState(7);
   const [syncDaysForward, setSyncDaysForward] = useState(30);
   const [syncMaxResults, setSyncMaxResults] = useState(100);
@@ -184,6 +196,7 @@ export function CalendarClient({
     eventDateFrom,
     eventDateTo,
   ].filter(Boolean).length;
+  const bulkCandidateCount = events.filter((event) => !event.imported_meeting_id).length;
 
   async function refreshEvents(overrides: Partial<{
     accountId: string;
@@ -221,6 +234,18 @@ export function CalendarClient({
         return current.map((item) => (item.id === nextEvent.id ? nextEvent : item));
       }
       return [nextEvent, ...current];
+    });
+  }
+
+  function upsertEvents(nextEvents: CalendarEvent[]) {
+    setEvents((current) => {
+      const nextById = new Map(nextEvents.map((event) => [event.id, event]));
+      const updated = current.map((event) => nextById.get(event.id) || event);
+      const existingIds = new Set(updated.map((event) => event.id));
+      return [
+        ...nextEvents.filter((event) => !existingIds.has(event.id)),
+        ...updated,
+      ];
     });
   }
 
@@ -360,6 +385,38 @@ export function CalendarClient({
       setError(err instanceof Error ? err.message : "Unable to create meeting.");
     } finally {
       setCreatingMeetingId(null);
+    }
+  }
+
+  async function createMeetingsForShownEvents() {
+    if (!events.length || isBulkCreating) {
+      return;
+    }
+
+    setIsBulkCreating(true);
+    setError("");
+    setSyncMessage("");
+    try {
+      const result = await postJson<CalendarBulkMeetingResult>(
+        "/calendar/events/create-meetings",
+        {
+          event_ids: events.map((event) => event.id),
+          tags: ["calendar"],
+          require_meeting_url: bulkRequireMeetingLink,
+        },
+      );
+      setSyncMessage(
+        `automation: Created ${result.created} meeting(s). Skipped ${result.skipped_existing} existing, ${result.skipped_missing_link} without meeting links, and ${result.skipped_missing_event} missing event(s).`,
+      );
+      if (activeEventFilters) {
+        await refreshEvents();
+      } else {
+        upsertEvents(result.events);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create meetings.");
+    } finally {
+      setIsBulkCreating(false);
     }
   }
 
@@ -645,6 +702,29 @@ export function CalendarClient({
               </button>
             </div>
           </form>
+
+          <div className="calendar-automation-panel">
+            <div>
+              <p className="eyebrow">Automation</p>
+              <strong>{bulkCandidateCount} shown event(s) need meetings</strong>
+            </div>
+            <label className="toggle-field">
+              <input
+                checked={bulkRequireMeetingLink}
+                onChange={(event) => setBulkRequireMeetingLink(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Require meeting link</span>
+            </label>
+            <button
+              className="button primary compact-button"
+              disabled={!events.length || !bulkCandidateCount || isBulkCreating}
+              onClick={() => void createMeetingsForShownEvents()}
+              type="button"
+            >
+              {isBulkCreating ? "Creating..." : "Create meetings for shown"}
+            </button>
+          </div>
 
           <form
             className="calendar-form"

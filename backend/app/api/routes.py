@@ -42,6 +42,8 @@ from app.schemas.summary import MeetingSummarySchema
 from app.schemas.calendar import (
     CalendarAccountCreate,
     CalendarAccountOut,
+    CalendarBulkMeetingCreate,
+    CalendarBulkMeetingCreateOut,
     CalendarEventCreate,
     CalendarEventMeetingCreate,
     CalendarEventOut,
@@ -364,6 +366,42 @@ def calendar_event_context(event: CalendarEvent) -> str | None:
         lines.append("Description:")
         lines.append(event.description[:4000])
     return "\n".join(lines) if lines else None
+
+
+def create_meeting_record_from_calendar_event(
+    db: Session,
+    event: CalendarEvent,
+    *,
+    tags: list[str] | None = None,
+) -> tuple[CalendarEvent, bool]:
+    if event.imported_meeting_id:
+        meeting = db.get(Meeting, event.imported_meeting_id)
+        if meeting:
+            return event, False
+        event.imported_meeting_id = None
+
+    meeting = Meeting(
+        workspace_id=event.workspace_id,
+        title=event.title,
+        source_type=meeting_source_from_calendar_event(event),
+        meeting_date=event.starts_at,
+        status=MeetingStatus.created,
+        tags=normalize_tags((tags or []) + ["calendar"]),
+        transcript_text=calendar_event_context(event),
+        transcript_source="calendar",
+        transcript_provider="calendar",
+        transcript_model=None,
+        transcript_language=None,
+        transcript_confidence=None,
+        transcript_created_at=func.now(),
+    )
+    if meeting.transcript_text:
+        meeting.status = MeetingStatus.transcribed
+
+    db.add(meeting)
+    db.flush()
+    event.imported_meeting_id = meeting.id
+    return event, True
 
 
 def sync_generated_action_items(
@@ -879,6 +917,73 @@ def import_calendar_event(
     return calendar_event_out(event)
 
 
+@router.post(
+    "/calendar/events/create-meetings",
+    response_model=CalendarBulkMeetingCreateOut,
+)
+def create_meetings_from_calendar_events(
+    payload: CalendarBulkMeetingCreate,
+    db: Session = Depends(get_db),
+):
+    requested_ids = list(dict.fromkeys(payload.event_ids))[:250]
+    if not requested_ids:
+        return CalendarBulkMeetingCreateOut(
+            requested=0,
+            eligible=0,
+            created=0,
+            events=[],
+        )
+
+    events = (
+        db.query(CalendarEvent)
+        .filter(CalendarEvent.id.in_(requested_ids))
+        .order_by(CalendarEvent.starts_at.desc(), CalendarEvent.id.desc())
+        .all()
+    )
+    events_by_id = {event.id: event for event in events}
+    skipped_existing = 0
+    skipped_missing_link = 0
+    created = 0
+    changed_events: list[CalendarEvent] = []
+
+    for event_id in requested_ids:
+        event = events_by_id.get(event_id)
+        if not event:
+            continue
+        if event.imported_meeting_id:
+            if db.get(Meeting, event.imported_meeting_id):
+                skipped_existing += 1
+                changed_events.append(event)
+                continue
+            event.imported_meeting_id = None
+        if payload.require_meeting_url and not event.meeting_url:
+            skipped_missing_link += 1
+            changed_events.append(event)
+            continue
+        _, did_create = create_meeting_record_from_calendar_event(
+            db,
+            event,
+            tags=payload.tags,
+        )
+        created += 1 if did_create else 0
+        skipped_existing += 0 if did_create else 1
+        changed_events.append(event)
+
+    db.commit()
+    for event in changed_events:
+        db.refresh(event)
+
+    return CalendarBulkMeetingCreateOut(
+        requested=len(requested_ids),
+        eligible=len(events),
+        created=created,
+        skipped_existing=skipped_existing,
+        skipped_missing_link=skipped_missing_link,
+        skipped_missing_event=len(requested_ids) - len(events),
+        events=[calendar_event_out(event) for event in changed_events],
+    )
+
+
 @router.post("/calendar/events/{event_id}/create-meeting", response_model=CalendarEventOut)
 def create_meeting_from_calendar_event(
     event_id: int,
@@ -888,35 +993,11 @@ def create_meeting_from_calendar_event(
     event = db.get(CalendarEvent, event_id)
     if not event:
         raise HTTPException(404)
-    if event.imported_meeting_id:
-        meeting = db.get(Meeting, event.imported_meeting_id)
-        if meeting:
-            db.refresh(event)
-            return calendar_event_out(event)
-        event.imported_meeting_id = None
-
-    tags = normalize_tags((payload.tags if payload else []) + ["calendar"])
-    meeting = Meeting(
-        workspace_id=event.workspace_id,
-        title=event.title,
-        source_type=meeting_source_from_calendar_event(event),
-        meeting_date=event.starts_at,
-        status=MeetingStatus.created,
-        tags=tags,
-        transcript_text=calendar_event_context(event),
-        transcript_source="calendar",
-        transcript_provider="calendar",
-        transcript_model=None,
-        transcript_language=None,
-        transcript_confidence=None,
-        transcript_created_at=func.now(),
+    event, _ = create_meeting_record_from_calendar_event(
+        db,
+        event,
+        tags=payload.tags if payload else [],
     )
-    if meeting.transcript_text:
-        meeting.status = MeetingStatus.transcribed
-
-    db.add(meeting)
-    db.flush()
-    event.imported_meeting_id = meeting.id
     db.commit()
     db.refresh(event)
     return calendar_event_out(event)

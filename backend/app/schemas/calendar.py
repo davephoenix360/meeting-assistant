@@ -110,6 +110,22 @@ class CalendarEventMeetingCreate(BaseModel):
         return value or []
 
 
+class CalendarBulkMeetingCreate(BaseModel):
+    event_ids: list[int] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    require_meeting_url: bool = True
+
+    @field_validator("event_ids", mode="before")
+    @classmethod
+    def default_event_ids(cls, value):
+        return value or []
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def default_bulk_tags(cls, value):
+        return value or []
+
+
 class CalendarSyncRequest(BaseModel):
     days_back: int = 7
     days_forward: int = 30
@@ -142,6 +158,16 @@ class CalendarEventOut(BaseModel):
     raw: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+class CalendarBulkMeetingCreateOut(BaseModel):
+    requested: int
+    eligible: int
+    created: int
+    skipped_existing: int = 0
+    skipped_missing_link: int = 0
+    skipped_missing_event: int = 0
+    events: list[CalendarEventOut] = Field(default_factory=list)
 
 
 class CalendarProviderStatusOut(BaseModel):
