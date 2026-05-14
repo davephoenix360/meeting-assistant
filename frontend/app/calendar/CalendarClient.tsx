@@ -90,6 +90,45 @@ function providerLabel(provider: string) {
   return labels[provider] || provider;
 }
 
+async function fetchCalendarEvents(filters: {
+  accountId: string;
+  provider: string;
+  query: string;
+  importStatus: string;
+  linkStatus: string;
+  dateFrom: string;
+  dateTo: string;
+}) {
+  const params = new URLSearchParams({ workspace_id: "1", limit: "100" });
+  if (filters.accountId) {
+    params.set("calendar_account_id", filters.accountId);
+  }
+  if (filters.provider !== "all") {
+    params.set("provider", filters.provider);
+  }
+  if (filters.query.trim()) {
+    params.set("q", filters.query.trim());
+  }
+  if (filters.importStatus !== "all") {
+    params.set("import_status", filters.importStatus);
+  }
+  if (filters.linkStatus !== "all") {
+    params.set("has_meeting_url", filters.linkStatus === "has_link" ? "true" : "false");
+  }
+  if (filters.dateFrom) {
+    params.set("date_from", new Date(filters.dateFrom).toISOString());
+  }
+  if (filters.dateTo) {
+    params.set("date_to", new Date(filters.dateTo).toISOString());
+  }
+
+  const response = await fetch(`${API_BASE_URL}/calendar/events?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json() as Promise<CalendarEvent[]>;
+}
+
 export function CalendarClient({
   initialAccounts,
   initialEvents,
@@ -113,6 +152,14 @@ export function CalendarClient({
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [syncingAccountId, setSyncingAccountId] = useState<number | null>(null);
   const [creatingMeetingId, setCreatingMeetingId] = useState<number | null>(null);
+  const [eventAccountFilter, setEventAccountFilter] = useState("");
+  const [eventProviderFilter, setEventProviderFilter] = useState("all");
+  const [eventQuery, setEventQuery] = useState("");
+  const [eventImportStatus, setEventImportStatus] = useState("all");
+  const [eventLinkStatus, setEventLinkStatus] = useState("all");
+  const [eventDateFrom, setEventDateFrom] = useState("");
+  const [eventDateTo, setEventDateTo] = useState("");
+  const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -120,6 +167,58 @@ export function CalendarClient({
     () => accounts.filter((account) => account.status !== "disconnected"),
     [accounts],
   );
+  const accountById = useMemo(
+    () => new Map(accounts.map((account) => [account.id, account])),
+    [accounts],
+  );
+  const activeEventFilters = [
+    eventAccountFilter,
+    eventProviderFilter !== "all" ? eventProviderFilter : "",
+    eventQuery.trim(),
+    eventImportStatus !== "all" ? eventImportStatus : "",
+    eventLinkStatus !== "all" ? eventLinkStatus : "",
+    eventDateFrom,
+    eventDateTo,
+  ].filter(Boolean).length;
+
+  async function refreshEvents(overrides: Partial<{
+    accountId: string;
+    provider: string;
+    query: string;
+    importStatus: string;
+    linkStatus: string;
+    dateFrom: string;
+    dateTo: string;
+  }> = {}) {
+    setIsLoadingEvents(true);
+    setError("");
+    try {
+      const nextEvents = await fetchCalendarEvents({
+        accountId: overrides.accountId ?? eventAccountFilter,
+        provider: overrides.provider ?? eventProviderFilter,
+        query: overrides.query ?? eventQuery,
+        importStatus: overrides.importStatus ?? eventImportStatus,
+        linkStatus: overrides.linkStatus ?? eventLinkStatus,
+        dateFrom: overrides.dateFrom ?? eventDateFrom,
+        dateTo: overrides.dateTo ?? eventDateTo,
+      });
+      setEvents(nextEvents);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load calendar events.");
+    } finally {
+      setIsLoadingEvents(false);
+    }
+  }
+
+  function upsertEvent(nextEvent: CalendarEvent) {
+    setEvents((current) => {
+      const existing = current.find((item) => item.id === nextEvent.id);
+      if (existing) {
+        return current.map((item) => (item.id === nextEvent.id ? nextEvent : item));
+      }
+      return [nextEvent, ...current];
+    });
+  }
 
   async function createAccount() {
     if (!email.trim() || isSavingAccount) {
@@ -183,10 +282,7 @@ export function CalendarClient({
         }`,
       );
       if (result.status === "synced") {
-        const response = await fetch(`${API_BASE_URL}/calendar/events?workspace_id=1`);
-        if (response.ok) {
-          setEvents((await response.json()) as CalendarEvent[]);
-        }
+        await refreshEvents();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sync account.");
@@ -212,7 +308,11 @@ export function CalendarClient({
         meeting_url: meetingUrl.trim() || null,
         raw: { source: "manual_import" },
       });
-      setEvents((current) => [event, ...current]);
+      if (activeEventFilters) {
+        await refreshEvents();
+      } else {
+        upsertEvent(event);
+      }
       setEventTitle("");
       setExternalId("");
       setStartsAt("");
@@ -233,9 +333,11 @@ export function CalendarClient({
         `/calendar/events/${eventId}/create-meeting`,
         { tags: ["calendar"] },
       );
-      setEvents((current) =>
-        current.map((item) => (item.id === event.id ? event : item)),
-      );
+      if (activeEventFilters) {
+        await refreshEvents();
+      } else {
+        upsertEvent(event);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create meeting.");
     } finally {
@@ -352,8 +454,132 @@ export function CalendarClient({
               <p className="eyebrow">Import foundation</p>
               <h3>Calendar events</h3>
             </div>
-            <span className="pill">{events.length} imported</span>
+            <div className="meta-row">
+              {activeEventFilters ? (
+                <span className="pill">{activeEventFilters} filter(s)</span>
+              ) : null}
+              <span className="pill">{events.length} shown</span>
+            </div>
           </div>
+
+          <form
+            className="calendar-filter-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refreshEvents();
+            }}
+          >
+            <label className="field">
+              <span className="label">Search</span>
+              <input
+                className="input compact-input"
+                onChange={(event) => setEventQuery(event.target.value)}
+                placeholder="Title, organizer, location"
+                value={eventQuery}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Account</span>
+              <select
+                className="input compact-input"
+                onChange={(event) => setEventAccountFilter(event.target.value)}
+                value={eventAccountFilter}
+              >
+                <option value="">All accounts</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.display_name || account.account_email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Provider</span>
+              <select
+                className="input compact-input"
+                onChange={(event) => setEventProviderFilter(event.target.value)}
+                value={eventProviderFilter}
+              >
+                <option value="all">All providers</option>
+                <option value="google">Google Calendar</option>
+                <option value="microsoft">Microsoft Graph</option>
+                <option value="outlook">Outlook</option>
+                <option value="local">Local/manual</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Import state</span>
+              <select
+                className="input compact-input"
+                onChange={(event) => setEventImportStatus(event.target.value)}
+                value={eventImportStatus}
+              >
+                <option value="all">All events</option>
+                <option value="not_imported">Needs meeting</option>
+                <option value="imported">Meeting created</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Meeting link</span>
+              <select
+                className="input compact-input"
+                onChange={(event) => setEventLinkStatus(event.target.value)}
+                value={eventLinkStatus}
+              >
+                <option value="all">With or without link</option>
+                <option value="has_link">Has meeting link</option>
+                <option value="missing_link">Missing meeting link</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Starts after</span>
+              <input
+                className="input compact-input"
+                onChange={(event) => setEventDateFrom(event.target.value)}
+                type="datetime-local"
+                value={eventDateFrom}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Starts before</span>
+              <input
+                className="input compact-input"
+                onChange={(event) => setEventDateTo(event.target.value)}
+                type="datetime-local"
+                value={eventDateTo}
+              />
+            </label>
+            <div className="calendar-filter-actions">
+              <button className="button primary compact-button" disabled={isLoadingEvents}>
+                {isLoadingEvents ? "Loading..." : "Apply filters"}
+              </button>
+              <button
+                className="button subtle compact-button"
+                disabled={isLoadingEvents || !activeEventFilters}
+                onClick={() => {
+                  setEventAccountFilter("");
+                  setEventProviderFilter("all");
+                  setEventQuery("");
+                  setEventImportStatus("all");
+                  setEventLinkStatus("all");
+                  setEventDateFrom("");
+                  setEventDateTo("");
+                  void refreshEvents({
+                    accountId: "",
+                    provider: "all",
+                    query: "",
+                    importStatus: "all",
+                    linkStatus: "all",
+                    dateFrom: "",
+                    dateTo: "",
+                  });
+                }}
+                type="button"
+              >
+                Reset
+              </button>
+            </div>
+          </form>
 
           <form
             className="calendar-form"
@@ -439,9 +665,20 @@ export function CalendarClient({
                 <article className="calendar-event" key={event.id}>
                   <div>
                     <strong>{event.title}</strong>
-                    <p className="helper">{formatDate(event.starts_at)}</p>
+                    <p className="helper">
+                      {formatDate(event.starts_at)}
+                      {" / "}
+                      {providerLabel(accountById.get(event.calendar_account_id)?.provider || "local")}
+                    </p>
                   </div>
                   <div className="meta-row">
+                    <span
+                      className={`status ${
+                        event.imported_meeting_id ? "completed" : "uploaded"
+                      }`}
+                    >
+                      {event.imported_meeting_id ? "Meeting created" : "Needs meeting"}
+                    </span>
                     {event.meeting_url ? (
                       <a className="pill link-pill" href={event.meeting_url}>
                         Meeting link
@@ -519,8 +756,8 @@ export function CalendarClient({
           ))}
         </div>
         <p className="footer-note">
-          This page can build provider authorization URLs once credentials are
-          configured. Token exchange and encrypted refresh-token storage come next.
+          Configure provider credentials, connect with OAuth, then sync and filter
+          events before creating meeting records.
         </p>
       </aside>
     </section>

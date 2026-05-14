@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse
 import httpx
@@ -428,8 +430,9 @@ def list_meetings(
         query = query.filter(cast(Meeting.status, String) == status)
     if source_type:
         query = query.filter(cast(Meeting.source_type, String) == source_type)
-    if q:
-        pattern = f"%{q.strip()}%"
+    query_text = q.strip() if q else ""
+    if query_text:
+        pattern = f"%{query_text}%"
         query = query.filter(
             or_(
                 Meeting.title.ilike(pattern),
@@ -746,12 +749,61 @@ def disconnect_calendar_account(account_id: int, db: Session = Depends(get_db)):
 def list_calendar_events(
     workspace_id: int = 1,
     calendar_account_id: int | None = None,
+    provider: str | None = None,
+    q: str | None = None,
+    import_status: str = "all",
+    has_meeting_url: bool | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    limit: int = 100,
     db: Session = Depends(get_db),
 ):
     query = db.query(CalendarEvent).filter(CalendarEvent.workspace_id == workspace_id)
     if calendar_account_id:
         query = query.filter(CalendarEvent.calendar_account_id == calendar_account_id)
-    events = query.order_by(CalendarEvent.starts_at.desc(), CalendarEvent.id.desc()).all()
+    if provider:
+        normalized_provider = provider.strip().lower()
+        if normalized_provider != "all":
+            query = query.join(
+                CalendarAccount,
+                CalendarAccount.id == CalendarEvent.calendar_account_id,
+            ).filter(CalendarAccount.provider == normalized_provider)
+    query_text = q.strip() if q else ""
+    if query_text:
+        pattern = f"%{query_text}%"
+        query = query.filter(
+            or_(
+                CalendarEvent.title.ilike(pattern),
+                CalendarEvent.organizer_email.ilike(pattern),
+                CalendarEvent.location.ilike(pattern),
+                CalendarEvent.description.ilike(pattern),
+            )
+        )
+    if import_status == "imported":
+        query = query.filter(CalendarEvent.imported_meeting_id.isnot(None))
+    elif import_status == "not_imported":
+        query = query.filter(CalendarEvent.imported_meeting_id.is_(None))
+    elif import_status != "all":
+        raise HTTPException(
+            400,
+            "import_status must be one of: all, imported, not_imported.",
+        )
+    if has_meeting_url is not None:
+        if has_meeting_url:
+            query = query.filter(CalendarEvent.meeting_url.isnot(None))
+        else:
+            query = query.filter(CalendarEvent.meeting_url.is_(None))
+    if date_from:
+        query = query.filter(CalendarEvent.starts_at >= date_from)
+    if date_to:
+        query = query.filter(CalendarEvent.starts_at <= date_to)
+
+    safe_limit = max(1, min(limit, 250))
+    events = (
+        query.order_by(CalendarEvent.starts_at.desc(), CalendarEvent.id.desc())
+        .limit(safe_limit)
+        .all()
+    )
     return [calendar_event_out(event) for event in events]
 
 
@@ -764,22 +816,23 @@ def import_calendar_event(
     if not account or account.status == "disconnected":
         raise HTTPException(404, "Connected calendar account not found")
 
-    event = CalendarEvent(
-        workspace_id=account.workspace_id,
-        calendar_account_id=account.id,
-        external_event_id=payload.external_event_id,
-        title=payload.title[:255],
-        starts_at=payload.starts_at,
-        ends_at=payload.ends_at,
-        organizer_email=payload.organizer_email,
-        meeting_url=payload.meeting_url,
-        location=payload.location,
-        description=payload.description,
-        attendees_json=payload.attendees,
-        artifacts_json=payload.artifacts,
-        raw_json=payload.raw,
+    event, _ = upsert_calendar_event(
+        db,
+        account,
+        {
+            "external_event_id": payload.external_event_id,
+            "title": payload.title,
+            "starts_at": payload.starts_at,
+            "ends_at": payload.ends_at,
+            "organizer_email": payload.organizer_email,
+            "meeting_url": payload.meeting_url,
+            "location": payload.location,
+            "description": payload.description,
+            "attendees": payload.attendees,
+            "artifacts": payload.artifacts,
+            "raw": payload.raw,
+        },
     )
-    db.add(event)
     try:
         db.commit()
     except IntegrityError:
@@ -802,8 +855,11 @@ def create_meeting_from_calendar_event(
     if not event:
         raise HTTPException(404)
     if event.imported_meeting_id:
-        db.refresh(event)
-        return calendar_event_out(event)
+        meeting = db.get(Meeting, event.imported_meeting_id)
+        if meeting:
+            db.refresh(event)
+            return calendar_event_out(event)
+        event.imported_meeting_id = None
 
     tags = normalize_tags((payload.tags if payload else []) + ["calendar"])
     meeting = Meeting(

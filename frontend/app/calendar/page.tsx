@@ -20,7 +20,7 @@ export default async function CalendarPage() {
           <p className="eyebrow">Integrations</p>
           <h2>Calendar</h2>
           <p className="lead">
-            Prepare calendar accounts and imported events before provider sync is connected.
+            Connect providers, sync upcoming events, and turn selected calendar items into meeting records.
           </p>
         </div>
       </section>
