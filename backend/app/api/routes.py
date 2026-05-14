@@ -47,6 +47,7 @@ from app.schemas.calendar import (
     CalendarEventOut,
     CalendarOAuthStartOut,
     CalendarProviderStatusOut,
+    CalendarSyncRequest,
     CalendarSyncResultOut,
 )
 from app.core.config import settings
@@ -645,10 +646,25 @@ def create_calendar_account(
 
 
 @router.post("/calendar/accounts/{account_id}/sync", response_model=CalendarSyncResultOut)
-async def sync_calendar_account_route(account_id: int, db: Session = Depends(get_db)):
+async def sync_calendar_account_route(
+    account_id: int,
+    payload: CalendarSyncRequest | None = None,
+    db: Session = Depends(get_db),
+):
     account = db.get(CalendarAccount, account_id)
     if not account:
         raise HTTPException(404)
+    sync_request = payload or CalendarSyncRequest()
+    days_back = min(sync_request.days_back, 365)
+    days_forward = min(sync_request.days_forward, 365)
+    max_results = max(1, min(sync_request.max_results, 1000))
+    max_pages = max(1, min(sync_request.max_pages, 20))
+    sync_window = {
+        "days_back": days_back,
+        "days_forward": days_forward,
+        "max_results": max_results,
+        "max_pages": max_pages,
+    }
     token = (
         db.query(CalendarAccountToken)
         .filter(CalendarAccountToken.calendar_account_id == account.id)
@@ -668,7 +684,14 @@ async def sync_calendar_account_route(account_id: int, db: Session = Depends(get
             apply_refreshed_calendar_token(token, refreshed_token)
             refreshed = True
             db.commit()
-        normalized_events = await fetch_provider_calendar_events(account, token)
+        normalized_events = await fetch_provider_calendar_events(
+            account,
+            token,
+            days_back=days_back,
+            days_forward=days_forward,
+            limit=max_results,
+            max_pages=max_pages,
+        )
     except TokenEncryptionError as e:
         raise HTTPException(500, str(e))
     except httpx.HTTPStatusError as e:
@@ -678,7 +701,14 @@ async def sync_calendar_account_route(account_id: int, db: Session = Depends(get
                 apply_refreshed_calendar_token(token, refreshed_token)
                 refreshed = True
                 db.commit()
-                normalized_events = await fetch_provider_calendar_events(account, token)
+                normalized_events = await fetch_provider_calendar_events(
+                    account,
+                    token,
+                    days_back=days_back,
+                    days_forward=days_forward,
+                    limit=max_results,
+                    max_pages=max_pages,
+                )
             except TokenEncryptionError as refresh_error:
                 raise HTTPException(500, str(refresh_error))
             except httpx.HTTPStatusError as refresh_error:
@@ -720,6 +750,8 @@ async def sync_calendar_account_route(account_id: int, db: Session = Depends(get
             "imported": imported,
             "updated": updated,
             "token_refreshed": refreshed,
+            "events_scanned": len(normalized_events),
+            "sync_window": sync_window,
         },
     }
     db.commit()
@@ -731,6 +763,8 @@ async def sync_calendar_account_route(account_id: int, db: Session = Depends(get
         "events_imported": imported,
         "events_updated": updated,
         "token_refreshed": refreshed,
+        "events_scanned": len(normalized_events),
+        "sync_window": sync_window,
     }
 
 

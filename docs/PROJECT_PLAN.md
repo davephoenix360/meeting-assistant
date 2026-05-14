@@ -73,6 +73,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Imported calendar events can create linked meeting records with calendar context attached.
 - Meeting detail surfaces linked calendar event metadata, attendees, meeting URLs, and artifacts.
 - Calendar events can be filtered by account, provider, date, import state, meeting-link state, and search text; repeated imports update existing events.
+- Calendar sync supports configurable date windows, max result counts, provider pagination, and recurring occurrence expansion.
 - Transcript provenance metadata is persisted and displayed for pasted and transcribed meetings.
 - Workspace search spans meetings, transcripts, AI summaries, and action items.
 - OpenRouter provider implementation exists.
@@ -136,6 +137,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Token refresh handling for expired calendar access tokens.
 - [x] Attach imported calendar events/artifacts to meetings.
 - [x] Synced event filtering and duplicate-safe import handling.
+- [x] Recurring event and pagination depth controls.
 - [ ] Post-meeting transcript/recording imports where APIs allow.
 
 ### Phase 6: Meeting Platform Integrations
@@ -158,7 +160,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add recurring event and pagination depth controls.
-2. Add calendar import automation controls.
-3. Add post-meeting artifact matching for recordings/transcripts.
-4. Add provider-specific permission documentation for calendar artifact imports.
+1. Add calendar import automation controls.
+2. Add post-meeting artifact matching for recordings/transcripts.
+3. Add provider-specific permission documentation for calendar artifact imports.
+4. Add calendar sync history/status details.

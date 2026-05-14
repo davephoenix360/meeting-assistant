@@ -300,7 +300,8 @@ async def fetch_provider_calendar_events(
     *,
     days_back: int = 7,
     days_forward: int = 30,
-    limit: int = 50,
+    limit: int = 100,
+    max_pages: int = 3,
 ) -> list[dict]:
     provider = "microsoft" if account.provider == "outlook" else account.provider
     config = calendar_provider_config(provider)
@@ -312,51 +313,81 @@ async def fetch_provider_calendar_events(
     start = now - timedelta(days=days_back)
     end = now + timedelta(days=days_forward)
     headers = {"Authorization": f"Bearer {access_token}"}
+    safe_limit = max(1, min(limit, 1000))
+    safe_max_pages = max(1, min(max_pages, 20))
 
     async with httpx.AsyncClient(timeout=30) as client:
         if provider == "google":
-            response = await client.get(
-                config.events_url,
-                headers=headers,
-                params={
+            raw_events: list[dict] = []
+            page_token = None
+            pages_read = 0
+            while len(raw_events) < safe_limit and pages_read < safe_max_pages:
+                params = {
                     "timeMin": start.isoformat(),
                     "timeMax": end.isoformat(),
                     "singleEvents": "true",
                     "orderBy": "startTime",
-                    "maxResults": min(limit, 250),
-                },
-            )
-            response.raise_for_status()
-            return [
-                normalize_google_event(item)
-                for item in response.json().get("items", [])
-                if item.get("id")
-            ]
+                    "maxResults": min(safe_limit - len(raw_events), 250),
+                }
+                if page_token:
+                    params["pageToken"] = page_token
+                response = await client.get(
+                    config.events_url,
+                    headers=headers,
+                    params=params,
+                )
+                response.raise_for_status()
+                data = response.json()
+                raw_events.extend(item for item in data.get("items", []) if item.get("id"))
+                pages_read += 1
+                page_token = data.get("nextPageToken")
+                if not page_token:
+                    break
+
+            return [normalize_google_event(item) for item in raw_events[:safe_limit]]
 
         if provider == "microsoft":
-            response = await client.get(
-                config.events_url,
-                headers={
-                    **headers,
-                    "Prefer": 'outlook.timezone="UTC"',
-                },
-                params={
-                    "$top": min(limit, 50),
-                    "$orderby": "start/dateTime",
-                    "$select": (
-                        "id,subject,bodyPreview,body,start,end,organizer,attendees,"
-                        "location,webLink,onlineMeetingUrl,onlineMeeting"
-                    ),
-                },
-            )
-            response.raise_for_status()
-            return [
-                normalize_microsoft_event(item)
-                for item in response.json().get("value", [])
-                if item.get("id")
-            ]
+            raw_events = []
+            next_url = microsoft_calendar_view_url(config.events_url)
+            pages_read = 0
+            params = {
+                "startDateTime": start.isoformat(),
+                "endDateTime": end.isoformat(),
+                "$top": min(safe_limit, 50),
+                "$orderby": "start/dateTime",
+                "$select": (
+                    "id,subject,bodyPreview,body,start,end,organizer,attendees,"
+                    "location,webLink,onlineMeetingUrl,onlineMeeting"
+                ),
+            }
+            microsoft_headers = {
+                **headers,
+                "Prefer": 'outlook.timezone="UTC"',
+            }
+            while len(raw_events) < safe_limit and pages_read < safe_max_pages:
+                response = await client.get(
+                    next_url,
+                    headers=microsoft_headers,
+                    params=params if pages_read == 0 else None,
+                )
+                response.raise_for_status()
+                data = response.json()
+                raw_events.extend(item for item in data.get("value", []) if item.get("id"))
+                pages_read += 1
+                next_url = data.get("@odata.nextLink")
+                params = None
+                if not next_url:
+                    break
+
+            return [normalize_microsoft_event(item) for item in raw_events[:safe_limit]]
 
     raise ValueError(f"Unsupported calendar sync provider: {account.provider}")
+
+
+def microsoft_calendar_view_url(events_url: str) -> str:
+    if events_url.endswith("/calendar/events"):
+        return events_url[: -len("/calendar/events")] + "/calendarView"
+    return "https://graph.microsoft.com/v1.0/me/calendarView"
 
 
 def normalize_google_event(raw: dict) -> dict:

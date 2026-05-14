@@ -110,6 +110,20 @@ class CalendarEventMeetingCreate(BaseModel):
         return value or []
 
 
+class CalendarSyncRequest(BaseModel):
+    days_back: int = 7
+    days_forward: int = 30
+    max_results: int = 100
+    max_pages: int = 3
+
+    @field_validator("days_back", "days_forward", "max_results", "max_pages")
+    @classmethod
+    def validate_positive_number(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("Sync controls cannot be negative.")
+        return value
+
+
 class CalendarEventOut(BaseModel):
     id: int
     workspace_id: int
@@ -159,3 +173,5 @@ class CalendarSyncResultOut(BaseModel):
     events_imported: int = 0
     events_updated: int = 0
     token_refreshed: bool = False
+    events_scanned: int = 0
+    sync_window: dict = Field(default_factory=dict)

@@ -152,6 +152,10 @@ export function CalendarClient({
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [syncingAccountId, setSyncingAccountId] = useState<number | null>(null);
   const [creatingMeetingId, setCreatingMeetingId] = useState<number | null>(null);
+  const [syncDaysBack, setSyncDaysBack] = useState(7);
+  const [syncDaysForward, setSyncDaysForward] = useState(30);
+  const [syncMaxResults, setSyncMaxResults] = useState(100);
+  const [syncMaxPages, setSyncMaxPages] = useState(3);
   const [eventAccountFilter, setEventAccountFilter] = useState("");
   const [eventProviderFilter, setEventProviderFilter] = useState("all");
   const [eventQuery, setEventQuery] = useState("");
@@ -220,6 +224,15 @@ export function CalendarClient({
     });
   }
 
+  function syncSettingsPayload() {
+    return {
+      days_back: Math.max(0, Math.min(Number(syncDaysBack) || 0, 365)),
+      days_forward: Math.max(0, Math.min(Number(syncDaysForward) || 0, 365)),
+      max_results: Math.max(1, Math.min(Number(syncMaxResults) || 1, 1000)),
+      max_pages: Math.max(1, Math.min(Number(syncMaxPages) || 1, 20)),
+    };
+  }
+
   async function createAccount() {
     if (!email.trim() || isSavingAccount) {
       return;
@@ -275,9 +288,14 @@ export function CalendarClient({
         events_imported: number;
         events_updated?: number;
         token_refreshed?: boolean;
-      }>(`/calendar/accounts/${nextAccountId}/sync`);
+        events_scanned?: number;
+      }>(`/calendar/accounts/${nextAccountId}/sync`, syncSettingsPayload());
       setSyncMessage(
         `${result.status}: ${result.message}${
+          typeof result.events_scanned === "number"
+            ? ` Scanned ${result.events_scanned} event(s).`
+            : ""
+        }${
           result.token_refreshed ? " Token refreshed." : ""
         }`,
       );
@@ -446,6 +464,53 @@ export function CalendarClient({
           ) : (
             <p className="helper">No calendar accounts have been added yet.</p>
           )}
+
+          <div className="calendar-sync-controls">
+            <label className="field">
+              <span className="label">Days back</span>
+              <input
+                className="input compact-input"
+                max={365}
+                min={0}
+                onChange={(event) => setSyncDaysBack(Number(event.target.value))}
+                type="number"
+                value={syncDaysBack}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Days forward</span>
+              <input
+                className="input compact-input"
+                max={365}
+                min={0}
+                onChange={(event) => setSyncDaysForward(Number(event.target.value))}
+                type="number"
+                value={syncDaysForward}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Max events</span>
+              <input
+                className="input compact-input"
+                max={1000}
+                min={1}
+                onChange={(event) => setSyncMaxResults(Number(event.target.value))}
+                type="number"
+                value={syncMaxResults}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Max pages</span>
+              <input
+                className="input compact-input"
+                max={20}
+                min={1}
+                onChange={(event) => setSyncMaxPages(Number(event.target.value))}
+                type="number"
+                value={syncMaxPages}
+              />
+            </label>
+          </div>
         </section>
 
         <section className="panel">
