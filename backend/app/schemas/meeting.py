@@ -149,6 +149,26 @@ class MeetingCalendarEventOut(BaseModel):
     artifacts: list[dict] = Field(default_factory=list)
 
 
+class MeetingArtifactMatchOut(BaseModel):
+    calendar_event_id: int
+    title: str
+    starts_at: datetime | None = None
+    meeting_url: str | None = None
+    imported_meeting_id: int | None = None
+    imported_meeting_title: str | None = None
+    score: int
+    reasons: list[str] = Field(default_factory=list)
+    action: str
+
+
+class MeetingArtifactAttachOut(BaseModel):
+    source_meeting: MeetingOut
+    target_meeting: MeetingOut
+    calendar_event: MeetingCalendarEventOut
+    merged: bool
+    copied_fields: list[str] = Field(default_factory=list)
+
+
 class TranscriptionProviderStatusOut(BaseModel):
     provider: str
     mode: str

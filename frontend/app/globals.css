@@ -933,6 +933,27 @@ h3 {
   flex-wrap: wrap;
 }
 
+.artifact-match-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.artifact-match-list {
+  display: grid;
+  gap: 10px;
+}
+
+.artifact-match-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
 .provider-status-list {
   display: grid;
   gap: 12px;
@@ -1524,6 +1545,10 @@ h3 {
 
   .calendar-automation-panel {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .artifact-match-card {
     flex-direction: column;
   }
 

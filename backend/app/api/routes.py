@@ -36,6 +36,8 @@ from app.schemas.meeting import (
     SearchResultOut,
     RelatedMeetingOut,
     MeetingCalendarEventOut,
+    MeetingArtifactMatchOut,
+    MeetingArtifactAttachOut,
     TranscriptionProviderStatusOut,
 )
 from app.schemas.summary import MeetingSummarySchema
@@ -366,6 +368,117 @@ def calendar_event_context(event: CalendarEvent) -> str | None:
         lines.append("Description:")
         lines.append(event.description[:4000])
     return "\n".join(lines) if lines else None
+
+
+def calendar_event_terms(event: CalendarEvent) -> set[str]:
+    attendee_text = " ".join(str(item) for item in event.attendees_json or [])
+    artifact_text = " ".join(str(item) for item in event.artifacts_json or [])
+    return memory_terms(
+        " ".join(
+            [
+                event.title,
+                event.organizer_email or "",
+                event.location or "",
+                event.description or "",
+                event.meeting_url or "",
+                attendee_text,
+                artifact_text,
+            ]
+        ),
+        limit=80,
+    )
+
+
+def artifact_source_blob(meeting: Meeting) -> str:
+    paths = [
+        os.path.basename(meeting.audio_file_path or ""),
+        os.path.basename(meeting.video_file_path or ""),
+    ]
+    return " ".join(
+        [
+            meeting.title,
+            " ".join(normalize_tags(meeting.tags)),
+            " ".join(paths),
+            meeting.transcript_text[:1200] if meeting.transcript_text else "",
+        ]
+    )
+
+
+def artifact_match_score(meeting: Meeting, event: CalendarEvent) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
+    source_terms = memory_terms(artifact_source_blob(meeting), limit=80)
+    event_terms = calendar_event_terms(event)
+    shared_terms = sorted(source_terms & event_terms)
+    if shared_terms:
+        score += min(len(shared_terms) * 8, 40)
+        reasons.append("Shared terms: " + ", ".join(shared_terms[:5]))
+
+    if meeting.meeting_date and event.starts_at:
+        day_delta = abs((meeting.meeting_date.date() - event.starts_at.date()).days)
+        if day_delta == 0:
+            score += 35
+            reasons.append("Same meeting date")
+        elif day_delta <= 1:
+            score += 20
+            reasons.append("Within one day")
+        elif day_delta <= 7:
+            score += 8
+            reasons.append("Within one week")
+
+    source_paths = [
+        os.path.basename(meeting.audio_file_path or "").lower(),
+        os.path.basename(meeting.video_file_path or "").lower(),
+    ]
+    artifact_values = " ".join(
+        str(value).lower()
+        for artifact in event.artifacts_json or []
+        for value in artifact.values()
+    )
+    if any(path and path in artifact_values for path in source_paths):
+        score += 30
+        reasons.append("Uploaded filename appears in calendar artifacts")
+
+    if event.meeting_url and meeting_source_value(meeting) == "upload":
+        score += 6
+        reasons.append("Calendar event has a meeting link")
+
+    if event.imported_meeting_id and event.imported_meeting_id != meeting.id:
+        score += 5
+        reasons.append("Calendar event already has a meeting record")
+
+    return score, reasons[:4]
+
+
+def copy_artifact_fields(source: Meeting, target: Meeting) -> list[str]:
+    copied: list[str] = []
+    if source.audio_file_path and not target.audio_file_path:
+        target.audio_file_path = source.audio_file_path
+        copied.append("audio_file_path")
+    if source.video_file_path and not target.video_file_path:
+        target.video_file_path = source.video_file_path
+        copied.append("video_file_path")
+    if source.transcript_text and (
+        not target.transcript_text or target.transcript_source == "calendar"
+    ):
+        target.transcript_text = source.transcript_text
+        target.transcript_source = source.transcript_source
+        target.transcript_provider = source.transcript_provider
+        target.transcript_model = source.transcript_model
+        target.transcript_language = source.transcript_language
+        target.transcript_confidence = source.transcript_confidence
+        target.transcript_created_at = source.transcript_created_at or func.now()
+        copied.append("transcript")
+
+    target.tags = normalize_tags(
+        (target.tags or []) + (source.tags or []) + ["calendar", "matched-artifact"]
+    )
+    if target.status != MeetingStatus.completed:
+        if target.transcript_text:
+            target.status = MeetingStatus.transcribed
+        elif target.audio_file_path or target.video_file_path:
+            target.status = MeetingStatus.uploaded
+    return copied
 
 
 def create_meeting_record_from_calendar_event(
@@ -1126,6 +1239,136 @@ def get_meeting_calendar_event(meeting_id: int, db: Session = Depends(get_db)):
     if not event:
         raise HTTPException(404)
     return meeting_calendar_event_out(event)
+
+
+@router.get(
+    "/meetings/{meeting_id}/artifact-matches",
+    response_model=list[MeetingArtifactMatchOut],
+)
+def get_meeting_artifact_matches(
+    meeting_id: int,
+    limit: int = 5,
+    db: Session = Depends(get_db),
+):
+    meeting = db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(404)
+
+    has_artifact = bool(
+        meeting.audio_file_path
+        or meeting.video_file_path
+        or (meeting.transcript_text and meeting.transcript_source != "calendar")
+    )
+    if not has_artifact:
+        return []
+
+    events = (
+        db.query(CalendarEvent)
+        .filter(CalendarEvent.workspace_id == meeting.workspace_id)
+        .filter(
+            or_(
+                CalendarEvent.imported_meeting_id.is_(None),
+                CalendarEvent.imported_meeting_id != meeting.id,
+            )
+        )
+        .order_by(CalendarEvent.starts_at.desc(), CalendarEvent.id.desc())
+        .limit(100)
+        .all()
+    )
+    linked_meeting_ids = [
+        event.imported_meeting_id for event in events if event.imported_meeting_id
+    ]
+    linked_meetings = (
+        {
+            item.id: item
+            for item in db.query(Meeting)
+            .filter(Meeting.id.in_(linked_meeting_ids))
+            .all()
+        }
+        if linked_meeting_ids
+        else {}
+    )
+
+    matches: list[MeetingArtifactMatchOut] = []
+    for event in events:
+        score, reasons = artifact_match_score(meeting, event)
+        if score < 10:
+            continue
+        linked_meeting = (
+            linked_meetings.get(event.imported_meeting_id)
+            if event.imported_meeting_id
+            else None
+        )
+        matches.append(
+            MeetingArtifactMatchOut(
+                calendar_event_id=event.id,
+                title=event.title,
+                starts_at=event.starts_at,
+                meeting_url=event.meeting_url,
+                imported_meeting_id=event.imported_meeting_id,
+                imported_meeting_title=linked_meeting.title if linked_meeting else None,
+                score=score,
+                reasons=reasons,
+                action=(
+                    "merge"
+                    if event.imported_meeting_id and event.imported_meeting_id != meeting.id
+                    else "link"
+                ),
+            )
+        )
+
+    safe_limit = max(1, min(limit, 10))
+    return sorted(matches, key=lambda item: item.score, reverse=True)[:safe_limit]
+
+
+@router.post(
+    "/meetings/{meeting_id}/artifact-matches/{calendar_event_id}/attach",
+    response_model=MeetingArtifactAttachOut,
+)
+def attach_meeting_artifact_to_calendar_event(
+    meeting_id: int,
+    calendar_event_id: int,
+    db: Session = Depends(get_db),
+):
+    source = db.get(Meeting, meeting_id)
+    if not source:
+        raise HTTPException(404)
+    event = db.get(CalendarEvent, calendar_event_id)
+    if not event or event.workspace_id != source.workspace_id:
+        raise HTTPException(404, "Calendar event not found for this workspace")
+
+    copied_fields: list[str] = []
+    target = source
+    merged = False
+    if event.imported_meeting_id:
+        existing_target = db.get(Meeting, event.imported_meeting_id)
+        if existing_target:
+            target = existing_target
+            if target.id != source.id:
+                merged = True
+                copied_fields = copy_artifact_fields(source, target)
+        else:
+            event.imported_meeting_id = None
+
+    if not event.imported_meeting_id:
+        event.imported_meeting_id = source.id
+        source.meeting_date = source.meeting_date or event.starts_at
+        source.tags = normalize_tags(
+            (source.tags or []) + ["calendar", "matched-artifact"]
+        )
+        copied_fields.append("calendar_event_link")
+
+    db.commit()
+    db.refresh(source)
+    db.refresh(target)
+    db.refresh(event)
+    return MeetingArtifactAttachOut(
+        source_meeting=source,
+        target_meeting=target,
+        calendar_event=meeting_calendar_event_out(event),
+        merged=merged,
+        copied_fields=copied_fields,
+    )
 
 
 @router.get("/meetings/{meeting_id}/related", response_model=list[RelatedMeetingOut])

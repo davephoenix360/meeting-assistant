@@ -107,6 +107,26 @@ type CalendarEvent = {
   artifacts: Record<string, unknown>[];
 };
 
+type ArtifactMatch = {
+  calendar_event_id: number;
+  title: string;
+  starts_at?: string | null;
+  meeting_url?: string | null;
+  imported_meeting_id?: number | null;
+  imported_meeting_title?: string | null;
+  score: number;
+  reasons: string[];
+  action: "link" | "merge" | string;
+};
+
+type ArtifactAttachResult = {
+  source_meeting: Meeting;
+  target_meeting: Meeting;
+  calendar_event: CalendarEvent;
+  merged: boolean;
+  copied_fields: string[];
+};
+
 type TranscriptionStatus = {
   provider: string;
   mode: string;
@@ -247,6 +267,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [output, setOutput] = useState<AIOutput | null>(null);
   const [relatedMeetings, setRelatedMeetings] = useState<RelatedMeeting[]>([]);
   const [calendarEvent, setCalendarEvent] = useState<CalendarEvent | null>(null);
+  const [artifactMatches, setArtifactMatches] = useState<ArtifactMatch[]>([]);
   const [transcriptionStatus, setTranscriptionStatus] =
     useState<TranscriptionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -260,6 +281,8 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [isEditingTags, setIsEditingTags] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const [isSavingTags, setIsSavingTags] = useState(false);
+  const [attachingMatchId, setAttachingMatchId] = useState<number | null>(null);
+  const [artifactMatchMessage, setArtifactMatchMessage] = useState("");
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -287,6 +310,14 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       );
     } catch {
       setCalendarEvent(null);
+    }
+
+    try {
+      setArtifactMatches(
+        await getJson<ArtifactMatch[]>(`/meetings/${params.id}/artifact-matches`),
+      );
+    } catch {
+      setArtifactMatches([]);
     }
 
     try {
@@ -345,6 +376,44 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       setError(err instanceof Error ? err.message : "Unable to transcribe meeting.");
     } finally {
       setIsTranscribing(false);
+    }
+  }
+
+  async function attachArtifactMatch(match: ArtifactMatch) {
+    if (attachingMatchId) {
+      return;
+    }
+
+    setAttachingMatchId(match.calendar_event_id);
+    setArtifactMatchMessage("");
+    setError("");
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/meetings/${params.id}/artifact-matches/${match.calendar_event_id}/attach`,
+        { method: "POST" },
+      );
+
+      if (!response.ok) {
+        throw new Error(await getApiErrorMessage(response));
+      }
+
+      const result = (await response.json()) as ArtifactAttachResult;
+      if (result.target_meeting.id !== Number(params.id)) {
+        window.location.href = `/meetings/${result.target_meeting.id}`;
+        return;
+      }
+      setMeeting(result.target_meeting);
+      setCalendarEvent(result.calendar_event);
+      setArtifactMatchMessage(
+        `Linked to calendar event. Updated: ${
+          result.copied_fields.length ? result.copied_fields.join(", ") : "calendar link"
+        }.`,
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to attach calendar match.");
+    } finally {
+      setAttachingMatchId(null);
     }
   }
 
@@ -568,6 +637,9 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       </section>
 
       {error ? <div className="alert">{error}</div> : null}
+      {artifactMatchMessage ? (
+        <div className="alert muted-alert">{artifactMatchMessage}</div>
+      ) : null}
       {!error && meeting.status === "failed" && meeting.processing_error ? (
         <div className="alert">
           Processing failed: {meeting.processing_error}
@@ -933,6 +1005,59 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                   })}
                 </div>
               ) : null}
+            </article>
+          ) : null}
+
+          {artifactMatches.length ? (
+            <article className="panel artifact-match-panel">
+              <div className="section-heading compact">
+                <div>
+                  <p className="eyebrow">Artifact matching</p>
+                  <h3>Possible calendar matches</h3>
+                </div>
+                <span className="pill">{artifactMatches.length} found</span>
+              </div>
+              <div className="artifact-match-list">
+                {artifactMatches.map((match) => (
+                  <div className="artifact-match-card" key={match.calendar_event_id}>
+                    <div>
+                      <strong>{match.title}</strong>
+                      <p className="helper">
+                        {formatDateTime(match.starts_at)}
+                        {match.imported_meeting_title
+                          ? ` / ${match.imported_meeting_title}`
+                          : ""}
+                      </p>
+                      <div className="meta-row">
+                        <span className="pill">Score {match.score}</span>
+                        <span className="pill">
+                          {match.action === "merge" ? "Merge artifact" : "Link event"}
+                        </span>
+                        {match.meeting_url ? (
+                          <a className="pill link-pill" href={match.meeting_url}>
+                            Meeting link
+                          </a>
+                        ) : null}
+                      </div>
+                      {match.reasons.length ? (
+                        <p className="helper">{match.reasons.join(" / ")}</p>
+                      ) : null}
+                    </div>
+                    <button
+                      className="button subtle compact-button"
+                      disabled={attachingMatchId === match.calendar_event_id}
+                      onClick={() => void attachArtifactMatch(match)}
+                      type="button"
+                    >
+                      {attachingMatchId === match.calendar_event_id
+                        ? "Attaching..."
+                        : match.action === "merge"
+                          ? "Merge"
+                          : "Link"}
+                    </button>
+                  </div>
+                ))}
+              </div>
             </article>
           ) : null}
         </div>
