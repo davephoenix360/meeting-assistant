@@ -50,6 +50,8 @@ node_modules/
 out/
 dist/
 .turbo/
+frontend/playwright-report/
+frontend/test-results/
 
 # Debug
 npm-debug.log*

@@ -4,7 +4,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:e2e": "powershell -ExecutionPolicy Bypass -File ./scripts/e2e.ps1",
+    "test:e2e:headed": "powershell -ExecutionPolicy Bypass -File ./scripts/e2e.ps1 --headed",
+    "test:e2e:debug": "powershell -ExecutionPolicy Bypass -File ./scripts/e2e.ps1 --debug"
   },
   "dependencies": {
     "next": "14.2.5",
@@ -12,6 +15,7 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.49.1",
     "@types/node": "25.7.0",
     "@types/react": "19.2.14",
     "typescript": "6.0.3"

@@ -37,6 +37,19 @@ npm install
 npm run dev
 ```
 
+## Testing
+
+```bash
+cd backend
+pytest
+
+cd ../frontend
+npm run test:e2e
+```
+
+Playwright uses installed Google Chrome by default and stores screenshots/traces
+under `frontend/test-results/`. See `docs/07_TESTING.md`.
+
 ## Notes
 
 - OpenRouter API key can be supplied with `OPENROUTER_API_KEY`.

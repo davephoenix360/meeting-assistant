@@ -77,6 +77,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Provider-specific artifact permission requirements are documented for Google Meet, Microsoft Teams, and Zoom before implementation.
 - Artifact provider readiness is exposed through an API and compact calendar UI status cards before import probes are shown.
 - Imported calendar events can create linked meeting records with calendar context attached.
+- Backend pytest and Playwright/Chrome E2E smoke testing are scaffolded with isolated test databases and screenshot capture.
 - Meeting detail surfaces linked calendar event metadata, attendees, meeting URLs, and artifacts.
 - Calendar events can be filtered by account, provider, date, import state, meeting-link state, and search text; repeated imports update existing events.
 - Calendar sync supports configurable date windows, max result counts, provider pagination, and recurring occurrence expansion.
@@ -168,6 +169,14 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [ ] Live capture proof of concept.
 - [ ] Consent and compliance UX.
 - [ ] Provider-specific live capture implementation.
+
+### Engineering Quality
+
+- [x] Backend pytest scaffold with isolated database fixtures.
+- [x] Playwright E2E scaffold using installed Chrome.
+- [x] Browser smoke tests with screenshot capture.
+- [ ] Expand backend route coverage across meetings, calendar sync, transcription, and action items.
+- [ ] Add E2E workflows for create meeting, upload/transcription status, and meeting detail review.
 
 ## Active Work
 
