@@ -189,7 +189,7 @@ Recommended first implementation:
 - [ ] Store artifact provider, provider artifact ID, artifact type, source URL,
       import status, imported time, and source metadata.
 - [ ] Never persist raw OAuth tokens outside encrypted token storage.
-- [ ] Add provider capability/status endpoints before adding import buttons.
+- [x] Add provider capability/status endpoints before adding import buttons.
 - [ ] Add a manual probe endpoint before any automatic artifact import job.
 - [ ] Import text transcripts before large recording files.
 - [ ] Display clear "not available yet", "missing permission", and "admin consent

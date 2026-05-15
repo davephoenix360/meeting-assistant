@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     microsoft_calendar_client_id: str | None = None
     microsoft_calendar_client_secret: str | None = None
     microsoft_calendar_tenant: str = "common"
+    zoom_client_id: str | None = None
+    zoom_client_secret: str | None = None
+    zoom_account_id: str | None = None
     calendar_background_sync_enabled: bool = True
     calendar_background_sync_interval_seconds: int = 300
     calendar_background_sync_days_back: int = 7

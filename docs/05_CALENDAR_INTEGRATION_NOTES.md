@@ -13,6 +13,7 @@ model so future providers do not force a rewrite.
 - List/import events with `GET /api/calendar/events` and `POST /api/calendar/events`.
 - Check provider readiness with `GET /api/calendar/providers`.
 - Check account sync status with `GET /api/calendar/sync-status`.
+- Check artifact-import readiness with `GET /api/artifacts/providers/status`.
 - Start OAuth with `GET /api/calendar/oauth/{provider}/start`; browser requests redirect to the provider, and `?as_json=true` returns the authorization payload for debugging.
 - Receive OAuth callback codes, exchange them for tokens, store encrypted token values, and redirect back to `/calendar`.
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
@@ -56,6 +57,9 @@ background sync error when one exists.
 - `MICROSOFT_CALENDAR_CLIENT_ID`
 - `MICROSOFT_CALENDAR_CLIENT_SECRET`
 - `MICROSOFT_CALENDAR_TENANT`
+- `ZOOM_CLIENT_ID`
+- `ZOOM_CLIENT_SECRET`
+- `ZOOM_ACCOUNT_ID`
 - `CALENDAR_BACKGROUND_SYNC_ENABLED`
 - `CALENDAR_BACKGROUND_SYNC_INTERVAL_SECONDS`
 - `CALENDAR_BACKGROUND_SYNC_DAYS_BACK`

@@ -40,6 +40,7 @@ from app.schemas.meeting import (
     MeetingArtifactAttachOut,
     TranscriptionProviderStatusOut,
 )
+from app.schemas.artifacts import ArtifactProviderStatusOut
 from app.schemas.summary import MeetingSummarySchema
 from app.schemas.calendar import (
     CalendarAccountCreate,
@@ -80,6 +81,7 @@ from app.services.calendar.providers import (
     sync_calendar_account,
 )
 from app.services.calendar.token_crypto import TokenEncryptionError
+from app.services.artifacts.providers import list_artifact_provider_statuses
 import os
 import re
 
@@ -694,6 +696,14 @@ def list_calendar_sync_status(
         query = query.filter(CalendarAccount.status != "disconnected")
     accounts = query.order_by(CalendarAccount.created_at.desc(), CalendarAccount.id.desc()).all()
     return [calendar_account_sync_status_out(account) for account in accounts]
+
+
+@router.get("/artifacts/providers/status", response_model=list[ArtifactProviderStatusOut])
+def list_artifact_providers_status(
+    workspace_id: int = 1,
+    db: Session = Depends(get_db),
+):
+    return list_artifact_provider_statuses(db, workspace_id=workspace_id)
 
 
 @router.get("/calendar/oauth/{provider}/start")

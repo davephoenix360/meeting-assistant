@@ -50,5 +50,6 @@ npm run dev
 - Connected OAuth calendars sync in the background with `CALENDAR_BACKGROUND_SYNC_INTERVAL_SECONDS` and related `CALENDAR_BACKGROUND_SYNC_*` settings.
 - Set `TOKEN_ENCRYPTION_KEY` before completing calendar OAuth; callbacks will reject token storage if the key is missing.
 - Calendar OAuth does not grant recording/transcript artifact access. See `docs/06_PROVIDER_ARTIFACT_PERMISSIONS.md` before enabling Google Meet, Microsoft Teams, or Zoom artifact imports.
+- Artifact import readiness is available at `GET /api/artifacts/providers/status`; Zoom readiness also checks `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, and `ZOOM_ACCOUNT_ID`.
 - Background jobs use a simple async task runner for MVP; Redis queue integration is scaffolded with TODO markers.
 - See `docs/04_MEETING_PLATFORM_ROADMAP.md` for Zoom/Meet/Teams roadmap constraints.

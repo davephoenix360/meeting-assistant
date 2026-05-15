@@ -46,6 +46,23 @@ export type CalendarProviderStatus = {
   events_url: string;
 };
 
+export type ArtifactProviderStatus = {
+  provider: string;
+  label: string;
+  configured: boolean;
+  connected: boolean;
+  status: string;
+  message: string;
+  artifact_types: string[];
+  required_scopes: string[];
+  optional_scopes: string[];
+  granted_scopes: string[];
+  missing_scopes: string[];
+  admin_consent_required: boolean;
+  setup_notes: string[];
+  docs_url?: string | null;
+};
+
 type CalendarBulkMeetingResult = {
   requested: number;
   eligible: number;
@@ -60,6 +77,7 @@ type Props = {
   initialAccounts: CalendarAccount[];
   initialEvents: CalendarEvent[];
   providerStatuses: CalendarProviderStatus[];
+  artifactProviderStatuses: ArtifactProviderStatus[];
 };
 
 async function postJson<T>(path: string, body?: unknown): Promise<T> {
@@ -182,6 +200,7 @@ export function CalendarClient({
   initialAccounts,
   initialEvents,
   providerStatuses,
+  artifactProviderStatuses,
 }: Props) {
   const [accounts, setAccounts] = useState(initialAccounts);
   const [events, setEvents] = useState(initialEvents);
@@ -1068,6 +1087,40 @@ export function CalendarClient({
         <p className="footer-note">
           Connected OAuth calendars sync automatically while this page is open.
         </p>
+
+        <div className="inspector-section">
+          <div className="section-heading compact">
+            <div>
+              <p className="eyebrow">Artifacts</p>
+              <h3>Readiness</h3>
+            </div>
+          </div>
+          <div className="provider-status-list compact-status-list">
+            {artifactProviderStatuses.map((status) => (
+              <div className="provider-status" key={status.provider}>
+                <div className="related-heading">
+                  <strong>{status.label}</strong>
+                  <span className={`status ${status.status}`}>
+                    {status.status.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <p className="helper">{status.message}</p>
+                <div className="artifact-scope-summary">
+                  <span>{status.artifact_types.join(", ")}</span>
+                  {status.missing_scopes.length ? (
+                    <span>{status.missing_scopes.length} missing scope(s)</span>
+                  ) : null}
+                  {status.admin_consent_required ? <span>Admin consent likely</span> : null}
+                </div>
+                {status.docs_url ? (
+                  <a className="pill link-pill" href={status.docs_url}>
+                    Provider docs
+                  </a>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
       </aside>
     </section>
   );
