@@ -49,5 +49,6 @@ npm run dev
 - Calendar accounts and events can be managed from `/calendar`. Google/Microsoft OAuth start URLs redirect to the provider once credentials are configured; see `docs/05_CALENDAR_INTEGRATION_NOTES.md`.
 - Connected OAuth calendars sync in the background with `CALENDAR_BACKGROUND_SYNC_INTERVAL_SECONDS` and related `CALENDAR_BACKGROUND_SYNC_*` settings.
 - Set `TOKEN_ENCRYPTION_KEY` before completing calendar OAuth; callbacks will reject token storage if the key is missing.
+- Calendar OAuth does not grant recording/transcript artifact access. See `docs/06_PROVIDER_ARTIFACT_PERMISSIONS.md` before enabling Google Meet, Microsoft Teams, or Zoom artifact imports.
 - Background jobs use a simple async task runner for MVP; Redis queue integration is scaffolded with TODO markers.
 - See `docs/04_MEETING_PLATFORM_ROADMAP.md` for Zoom/Meet/Teams roadmap constraints.

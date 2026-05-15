@@ -66,3 +66,7 @@ background sync error when one exists.
 
 Check the latest Google and Microsoft provider docs before implementing OAuth because
 allowed redirect URLs, consent screen rules, and required scopes can change.
+
+Calendar scopes do not grant recording or transcript access. See
+`docs/06_PROVIDER_ARTIFACT_PERMISSIONS.md` before adding provider-specific
+artifact imports.

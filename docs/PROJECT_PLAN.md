@@ -74,6 +74,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Connected OAuth calendars auto-sync while the calendar page is open, with advanced sync controls hidden until needed.
 - The backend runs an in-process background sync loop for connected OAuth calendars, configurable by environment variables.
 - Calendar accounts expose last sync status/result/error details in the API and calendar UI.
+- Provider-specific artifact permission requirements are documented for Google Meet, Microsoft Teams, and Zoom before implementation.
 - Imported calendar events can create linked meeting records with calendar context attached.
 - Meeting detail surfaces linked calendar event metadata, attendees, meeting URLs, and artifacts.
 - Calendar events can be filtered by account, provider, date, import state, meeting-link state, and search text; repeated imports update existing events.
@@ -157,7 +158,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [ ] Zoom artifact import.
 - [ ] Google Meet artifact import.
 - [ ] Microsoft Teams artifact import.
-- [ ] Provider-specific permission documentation.
+- [x] Provider-specific permission documentation.
 
 ### Phase 7: Live Capture / Bots
 
@@ -172,7 +173,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add provider-specific permission documentation for calendar artifact imports.
-2. Add saved calendar automation rules.
-3. Add provider API artifact import probes for Zoom/Google/Microsoft.
+1. Add provider capability/status endpoints for artifact imports.
+2. Add provider API artifact import probes for Zoom/Google/Microsoft.
+3. Add saved calendar automation rules.
 4. Add durable sync-history table if account-level status is not enough.
