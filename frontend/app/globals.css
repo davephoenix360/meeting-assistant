@@ -853,6 +853,15 @@ h3 {
   margin-bottom: 16px;
 }
 
+.compact-automation {
+  margin-top: 16px;
+  margin-bottom: 0;
+}
+
+.manual-import-toggle {
+  margin-bottom: 12px;
+}
+
 .toggle-field {
   display: inline-flex;
   align-items: center;

@@ -23,6 +23,10 @@ access tokens automatically when they are expired or rejected with `401`.
 Imported events can create meeting records. The event remains linked through
 `calendar_events.imported_meeting_id`.
 
+The `/calendar` page auto-syncs connected OAuth accounts every five minutes while
+the page is open. This is intentionally lightweight for the MVP. A durable
+background scheduler is still needed for syncing when no user has the page open.
+
 ## What You Will Need For External Providers
 
 - A Google Cloud project for Google Calendar, or a Microsoft Entra app registration for Microsoft Graph/Outlook.

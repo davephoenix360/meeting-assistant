@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE_URL } from "../../lib/api";
 
 export type CalendarAccount = {
@@ -164,6 +164,11 @@ export function CalendarClient({
   const [creatingMeetingId, setCreatingMeetingId] = useState<number | null>(null);
   const [isBulkCreating, setIsBulkCreating] = useState(false);
   const [bulkRequireMeetingLink, setBulkRequireMeetingLink] = useState(true);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+  const [showSyncSettings, setShowSyncSettings] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showManualImport, setShowManualImport] = useState(false);
   const [syncDaysBack, setSyncDaysBack] = useState(7);
   const [syncDaysForward, setSyncDaysForward] = useState(30);
   const [syncMaxResults, setSyncMaxResults] = useState(100);
@@ -183,6 +188,13 @@ export function CalendarClient({
     () => accounts.filter((account) => account.status !== "disconnected"),
     [accounts],
   );
+  const oauthAccounts = useMemo(
+    () =>
+      connectedAccounts.filter(
+        (account) => account.provider !== "local" && account.scopes.length > 0,
+      ),
+    [connectedAccounts],
+  );
   const accountById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account])),
     [accounts],
@@ -198,7 +210,7 @@ export function CalendarClient({
   ].filter(Boolean).length;
   const bulkCandidateCount = events.filter((event) => !event.imported_meeting_id).length;
 
-  async function refreshEvents(overrides: Partial<{
+  const refreshEvents = useCallback(async (overrides: Partial<{
     accountId: string;
     provider: string;
     query: string;
@@ -206,7 +218,7 @@ export function CalendarClient({
     linkStatus: string;
     dateFrom: string;
     dateTo: string;
-  }> = {}) {
+  }> = {}) => {
     setIsLoadingEvents(true);
     setError("");
     try {
@@ -225,7 +237,15 @@ export function CalendarClient({
     } finally {
       setIsLoadingEvents(false);
     }
-  }
+  }, [
+    eventAccountFilter,
+    eventProviderFilter,
+    eventQuery,
+    eventImportStatus,
+    eventLinkStatus,
+    eventDateFrom,
+    eventDateTo,
+  ]);
 
   function upsertEvent(nextEvent: CalendarEvent) {
     setEvents((current) => {
@@ -249,14 +269,14 @@ export function CalendarClient({
     });
   }
 
-  function syncSettingsPayload() {
+  const syncSettingsPayload = useCallback(() => {
     return {
       days_back: Math.max(0, Math.min(Number(syncDaysBack) || 0, 365)),
       days_forward: Math.max(0, Math.min(Number(syncDaysForward) || 0, 365)),
       max_results: Math.max(1, Math.min(Number(syncMaxResults) || 1, 1000)),
       max_pages: Math.max(1, Math.min(Number(syncMaxPages) || 1, 20)),
     };
-  }
+  }, [syncDaysBack, syncDaysForward, syncMaxResults, syncMaxPages]);
 
   async function createAccount() {
     if (!email.trim() || isSavingAccount) {
@@ -302,9 +322,14 @@ export function CalendarClient({
     }
   }
 
-  async function syncAccount(nextAccountId: number) {
+  const syncAccount = useCallback(async (
+    nextAccountId: number,
+    options: { quiet?: boolean } = {},
+  ) => {
     setSyncingAccountId(nextAccountId);
-    setSyncMessage("");
+    if (!options.quiet) {
+      setSyncMessage("");
+    }
     setError("");
     try {
       const result = await postJson<{
@@ -315,15 +340,17 @@ export function CalendarClient({
         token_refreshed?: boolean;
         events_scanned?: number;
       }>(`/calendar/accounts/${nextAccountId}/sync`, syncSettingsPayload());
-      setSyncMessage(
-        `${result.status}: ${result.message}${
-          typeof result.events_scanned === "number"
-            ? ` Scanned ${result.events_scanned} event(s).`
-            : ""
-        }${
-          result.token_refreshed ? " Token refreshed." : ""
-        }`,
-      );
+      if (!options.quiet || result.status === "synced") {
+        setSyncMessage(
+          `${options.quiet ? "auto-sync" : result.status}: ${result.message}${
+            typeof result.events_scanned === "number"
+              ? ` Scanned ${result.events_scanned} event(s).`
+              : ""
+          }${
+            result.token_refreshed ? " Token refreshed." : ""
+          }`,
+        );
+      }
       if (result.status === "synced") {
         await refreshEvents();
       }
@@ -332,7 +359,47 @@ export function CalendarClient({
     } finally {
       setSyncingAccountId(null);
     }
-  }
+  }, [refreshEvents, syncSettingsPayload]);
+
+  useEffect(() => {
+    if (!autoSyncEnabled || !oauthAccounts.length) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function syncOAuthAccounts() {
+      if (cancelled) {
+        return;
+      }
+      setIsAutoSyncing(true);
+      try {
+        for (const account of oauthAccounts) {
+          if (cancelled) {
+            return;
+          }
+          await syncAccount(account.id, { quiet: true });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsAutoSyncing(false);
+        }
+      }
+    }
+
+    const initialSync = window.setTimeout(() => {
+      void syncOAuthAccounts();
+    }, 1500);
+    const interval = window.setInterval(() => {
+      void syncOAuthAccounts();
+    }, 5 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialSync);
+      window.clearInterval(interval);
+    };
+  }, [autoSyncEnabled, oauthAccounts, syncAccount]);
 
   async function importEvent() {
     if (!accountId || !eventTitle.trim() || !externalId.trim() || isSavingEvent) {
@@ -432,7 +499,14 @@ export function CalendarClient({
               <p className="eyebrow">Accounts</p>
               <h3>Calendar accounts</h3>
             </div>
-            <span className="pill">{connectedAccounts.length} connected</span>
+            <div className="meta-row">
+              <span className="pill">{connectedAccounts.length} connected</span>
+              {oauthAccounts.length ? (
+                <span className={`status ${isAutoSyncing ? "uploaded" : "completed"}`}>
+                  {isAutoSyncing ? "Syncing" : "Auto-sync on"}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <form
@@ -522,52 +596,78 @@ export function CalendarClient({
             <p className="helper">No calendar accounts have been added yet.</p>
           )}
 
-          <div className="calendar-sync-controls">
-            <label className="field">
-              <span className="label">Days back</span>
-              <input
-                className="input compact-input"
-                max={365}
-                min={0}
-                onChange={(event) => setSyncDaysBack(Number(event.target.value))}
-                type="number"
-                value={syncDaysBack}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Days forward</span>
-              <input
-                className="input compact-input"
-                max={365}
-                min={0}
-                onChange={(event) => setSyncDaysForward(Number(event.target.value))}
-                type="number"
-                value={syncDaysForward}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Max events</span>
-              <input
-                className="input compact-input"
-                max={1000}
-                min={1}
-                onChange={(event) => setSyncMaxResults(Number(event.target.value))}
-                type="number"
-                value={syncMaxResults}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Max pages</span>
-              <input
-                className="input compact-input"
-                max={20}
-                min={1}
-                onChange={(event) => setSyncMaxPages(Number(event.target.value))}
-                type="number"
-                value={syncMaxPages}
-              />
-            </label>
-          </div>
+          {oauthAccounts.length ? (
+            <div className="calendar-automation-panel compact-automation">
+              <div>
+                <p className="eyebrow">Sync</p>
+                <strong>OAuth calendars sync every 5 minutes while this page is open.</strong>
+              </div>
+              <label className="toggle-field">
+                <input
+                  checked={autoSyncEnabled}
+                  onChange={(event) => setAutoSyncEnabled(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Auto-sync</span>
+              </label>
+              <button
+                className="button subtle compact-button"
+                onClick={() => setShowSyncSettings((current) => !current)}
+                type="button"
+              >
+                {showSyncSettings ? "Hide settings" : "Sync settings"}
+              </button>
+            </div>
+          ) : null}
+
+          {showSyncSettings ? (
+            <div className="calendar-sync-controls">
+              <label className="field">
+                <span className="label">Days back</span>
+                <input
+                  className="input compact-input"
+                  max={365}
+                  min={0}
+                  onChange={(event) => setSyncDaysBack(Number(event.target.value))}
+                  type="number"
+                  value={syncDaysBack}
+                />
+              </label>
+              <label className="field">
+                <span className="label">Days forward</span>
+                <input
+                  className="input compact-input"
+                  max={365}
+                  min={0}
+                  onChange={(event) => setSyncDaysForward(Number(event.target.value))}
+                  type="number"
+                  value={syncDaysForward}
+                />
+              </label>
+              <label className="field">
+                <span className="label">Max events</span>
+                <input
+                  className="input compact-input"
+                  max={1000}
+                  min={1}
+                  onChange={(event) => setSyncMaxResults(Number(event.target.value))}
+                  type="number"
+                  value={syncMaxResults}
+                />
+              </label>
+              <label className="field">
+                <span className="label">Max pages</span>
+                <input
+                  className="input compact-input"
+                  max={20}
+                  min={1}
+                  onChange={(event) => setSyncMaxPages(Number(event.target.value))}
+                  type="number"
+                  value={syncMaxPages}
+                />
+              </label>
+            </div>
+          ) : null}
         </section>
 
         <section className="panel">
@@ -585,7 +685,7 @@ export function CalendarClient({
           </div>
 
           <form
-            className="calendar-filter-form"
+            className="calendar-filter-form compact-calendar-filters"
             onSubmit={(event) => {
               event.preventDefault();
               void refreshEvents();
@@ -601,35 +701,6 @@ export function CalendarClient({
               />
             </label>
             <label className="field">
-              <span className="label">Account</span>
-              <select
-                className="input compact-input"
-                onChange={(event) => setEventAccountFilter(event.target.value)}
-                value={eventAccountFilter}
-              >
-                <option value="">All accounts</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.display_name || account.account_email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span className="label">Provider</span>
-              <select
-                className="input compact-input"
-                onChange={(event) => setEventProviderFilter(event.target.value)}
-                value={eventProviderFilter}
-              >
-                <option value="all">All providers</option>
-                <option value="google">Google Calendar</option>
-                <option value="microsoft">Microsoft Graph</option>
-                <option value="outlook">Outlook</option>
-                <option value="local">Local/manual</option>
-              </select>
-            </label>
-            <label className="field">
               <span className="label">Import state</span>
               <select
                 className="input compact-input"
@@ -641,39 +712,16 @@ export function CalendarClient({
                 <option value="imported">Meeting created</option>
               </select>
             </label>
-            <label className="field">
-              <span className="label">Meeting link</span>
-              <select
-                className="input compact-input"
-                onChange={(event) => setEventLinkStatus(event.target.value)}
-                value={eventLinkStatus}
-              >
-                <option value="all">With or without link</option>
-                <option value="has_link">Has meeting link</option>
-                <option value="missing_link">Missing meeting link</option>
-              </select>
-            </label>
-            <label className="field">
-              <span className="label">Starts after</span>
-              <input
-                className="input compact-input"
-                onChange={(event) => setEventDateFrom(event.target.value)}
-                type="datetime-local"
-                value={eventDateFrom}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Starts before</span>
-              <input
-                className="input compact-input"
-                onChange={(event) => setEventDateTo(event.target.value)}
-                type="datetime-local"
-                value={eventDateTo}
-              />
-            </label>
             <div className="calendar-filter-actions">
               <button className="button primary compact-button" disabled={isLoadingEvents}>
                 {isLoadingEvents ? "Loading..." : "Apply filters"}
+              </button>
+              <button
+                className="button subtle compact-button"
+                onClick={() => setShowAdvancedFilters((current) => !current)}
+                type="button"
+              >
+                {showAdvancedFilters ? "Hide advanced" : "Advanced"}
               </button>
               <button
                 className="button subtle compact-button"
@@ -701,6 +749,69 @@ export function CalendarClient({
                 Reset
               </button>
             </div>
+            {showAdvancedFilters ? (
+              <>
+                <label className="field">
+                  <span className="label">Account</span>
+                  <select
+                    className="input compact-input"
+                    onChange={(event) => setEventAccountFilter(event.target.value)}
+                    value={eventAccountFilter}
+                  >
+                    <option value="">All accounts</option>
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.display_name || account.account_email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="label">Provider</span>
+                  <select
+                    className="input compact-input"
+                    onChange={(event) => setEventProviderFilter(event.target.value)}
+                    value={eventProviderFilter}
+                  >
+                    <option value="all">All providers</option>
+                    <option value="google">Google Calendar</option>
+                    <option value="microsoft">Microsoft Graph</option>
+                    <option value="outlook">Outlook</option>
+                    <option value="local">Local/manual</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="label">Meeting link</span>
+                  <select
+                    className="input compact-input"
+                    onChange={(event) => setEventLinkStatus(event.target.value)}
+                    value={eventLinkStatus}
+                  >
+                    <option value="all">With or without link</option>
+                    <option value="has_link">Has meeting link</option>
+                    <option value="missing_link">Missing meeting link</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="label">Starts after</span>
+                  <input
+                    className="input compact-input"
+                    onChange={(event) => setEventDateFrom(event.target.value)}
+                    type="datetime-local"
+                    value={eventDateFrom}
+                  />
+                </label>
+                <label className="field">
+                  <span className="label">Starts before</span>
+                  <input
+                    className="input compact-input"
+                    onChange={(event) => setEventDateTo(event.target.value)}
+                    type="datetime-local"
+                    value={eventDateTo}
+                  />
+                </label>
+              </>
+            ) : null}
           </form>
 
           <div className="calendar-automation-panel">
@@ -726,83 +837,93 @@ export function CalendarClient({
             </button>
           </div>
 
-          <form
-            className="calendar-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void importEvent();
-            }}
+          <button
+            className="button subtle compact-button manual-import-toggle"
+            onClick={() => setShowManualImport((current) => !current)}
+            type="button"
           >
-            <label className="field">
-              <span className="label">Account</span>
-              <select
-                className="input compact-input"
-                disabled={!connectedAccounts.length}
-                onChange={(event) => setAccountId(event.target.value)}
-                value={accountId}
-              >
-                <option value="">Choose account</option>
-                {connectedAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.display_name || account.account_email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span className="label">Event title</span>
-              <input
-                className="input compact-input"
-                onChange={(event) => setEventTitle(event.target.value)}
-                placeholder="Customer onboarding sync"
-                value={eventTitle}
-              />
-            </label>
-            <label className="field">
-              <span className="label">External event ID</span>
-              <input
-                className="input compact-input"
-                onChange={(event) => setExternalId(event.target.value)}
-                placeholder="provider-event-id"
-                value={externalId}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Starts</span>
-              <input
-                className="input compact-input"
-                onChange={(event) => setStartsAt(event.target.value)}
-                type="datetime-local"
-                value={startsAt}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Ends</span>
-              <input
-                className="input compact-input"
-                onChange={(event) => setEndsAt(event.target.value)}
-                type="datetime-local"
-                value={endsAt}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Meeting URL</span>
-              <input
-                className="input compact-input"
-                onChange={(event) => setMeetingUrl(event.target.value)}
-                placeholder="https://meet.google.com/..."
-                value={meetingUrl}
-              />
-            </label>
-            <button
-              className="button primary compact-button"
-              disabled={
-                !accountId || !eventTitle.trim() || !externalId.trim() || isSavingEvent
-              }
+            {showManualImport ? "Hide manual import" : "Manual import"}
+          </button>
+
+          {showManualImport ? (
+            <form
+              className="calendar-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void importEvent();
+              }}
             >
-              {isSavingEvent ? "Importing..." : "Import event"}
-            </button>
-          </form>
+              <label className="field">
+                <span className="label">Account</span>
+                <select
+                  className="input compact-input"
+                  disabled={!connectedAccounts.length}
+                  onChange={(event) => setAccountId(event.target.value)}
+                  value={accountId}
+                >
+                  <option value="">Choose account</option>
+                  {connectedAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.display_name || account.account_email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="label">Event title</span>
+                <input
+                  className="input compact-input"
+                  onChange={(event) => setEventTitle(event.target.value)}
+                  placeholder="Customer onboarding sync"
+                  value={eventTitle}
+                />
+              </label>
+              <label className="field">
+                <span className="label">External event ID</span>
+                <input
+                  className="input compact-input"
+                  onChange={(event) => setExternalId(event.target.value)}
+                  placeholder="provider-event-id"
+                  value={externalId}
+                />
+              </label>
+              <label className="field">
+                <span className="label">Starts</span>
+                <input
+                  className="input compact-input"
+                  onChange={(event) => setStartsAt(event.target.value)}
+                  type="datetime-local"
+                  value={startsAt}
+                />
+              </label>
+              <label className="field">
+                <span className="label">Ends</span>
+                <input
+                  className="input compact-input"
+                  onChange={(event) => setEndsAt(event.target.value)}
+                  type="datetime-local"
+                  value={endsAt}
+                />
+              </label>
+              <label className="field">
+                <span className="label">Meeting URL</span>
+                <input
+                  className="input compact-input"
+                  onChange={(event) => setMeetingUrl(event.target.value)}
+                  placeholder="https://meet.google.com/..."
+                  value={meetingUrl}
+                />
+              </label>
+              <button
+                className="button primary compact-button"
+                disabled={
+                  !accountId || !eventTitle.trim() || !externalId.trim() || isSavingEvent
+                }
+              >
+                {isSavingEvent ? "Importing..." : "Import event"}
+              </button>
+            </form>
+          ) : null}
 
           {events.length ? (
             <div className="calendar-event-list">
@@ -861,17 +982,10 @@ export function CalendarClient({
       <aside className="panel inspector-panel">
         <div className="section-heading compact">
           <div>
-            <p className="eyebrow">External API readiness</p>
-            <h3>What you will need</h3>
+            <p className="eyebrow">Providers</p>
+            <h3>Connections</h3>
           </div>
         </div>
-        <ul className="check-list">
-          <li>Google Cloud or Microsoft Entra app registration</li>
-          <li>OAuth client ID and client secret</li>
-          <li>Redirect URL for this backend</li>
-          <li>Calendar read scopes approved for your account</li>
-          <li>Test calendar account with meeting links and artifacts</li>
-        </ul>
         <div className="provider-status-list">
           {providerStatuses.map((status) => (
             <div className="provider-status" key={status.provider}>
@@ -881,14 +995,11 @@ export function CalendarClient({
                   {status.configured ? "Configured" : "Missing keys"}
                 </span>
               </div>
-              <p className="helper">{status.redirect_uri}</p>
-              <div className="meta-row">
-                {status.scopes.slice(0, 2).map((scope) => (
-                  <span className="pill" key={scope}>
-                    {scope}
-                  </span>
-                ))}
-              </div>
+              <p className="helper">
+                {status.configured
+                  ? "Ready for OAuth connection."
+                  : "Add client ID and secret to enable OAuth."}
+              </p>
               {status.client_id_configured ? (
                 <a
                   className="button subtle compact-button"
@@ -901,8 +1012,7 @@ export function CalendarClient({
           ))}
         </div>
         <p className="footer-note">
-          Configure provider credentials, connect with OAuth, then sync and filter
-          events before creating meeting records.
+          Connected OAuth calendars sync automatically while this page is open.
         </p>
       </aside>
     </section>
