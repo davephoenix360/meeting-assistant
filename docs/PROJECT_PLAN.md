@@ -72,6 +72,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Calendar OAuth start routes redirect browser users to providers and support JSON debugging with `as_json=true`.
 - Calendar provider sync refreshes expired or rejected access tokens with stored refresh tokens.
 - Connected OAuth calendars auto-sync while the calendar page is open, with advanced sync controls hidden until needed.
+- The backend runs an in-process background sync loop for connected OAuth calendars, configurable by environment variables.
 - Imported calendar events can create linked meeting records with calendar context attached.
 - Meeting detail surfaces linked calendar event metadata, attendees, meeting URLs, and artifacts.
 - Calendar events can be filtered by account, provider, date, import state, meeting-link state, and search text; repeated imports update existing events.
@@ -145,6 +146,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Calendar import automation controls.
 - [x] Open-page auto-sync for connected OAuth calendars.
 - [x] Simplify calendar UI by hiding advanced filters, sync depth controls, and manual import by default.
+- [x] Durable-enough MVP background calendar sync loop for connected OAuth accounts.
 - [x] Post-meeting transcript/recording artifact matching.
 - [ ] Post-meeting transcript/recording imports where provider APIs allow.
 
@@ -169,6 +171,6 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 ## Next Recommended Work
 
 1. Add provider-specific permission documentation for calendar artifact imports.
-2. Add durable background calendar sync for connected OAuth accounts.
-3. Add calendar sync history/status details.
-4. Add saved calendar automation rules.
+2. Add calendar sync history/status details.
+3. Add saved calendar automation rules.
+4. Add provider API artifact import probes for Zoom/Google/Microsoft.

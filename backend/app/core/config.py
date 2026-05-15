@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     microsoft_calendar_client_id: str | None = None
     microsoft_calendar_client_secret: str | None = None
     microsoft_calendar_tenant: str = "common"
+    calendar_background_sync_enabled: bool = True
+    calendar_background_sync_interval_seconds: int = 300
+    calendar_background_sync_days_back: int = 7
+    calendar_background_sync_days_forward: int = 30
+    calendar_background_sync_max_results: int = 100
+    calendar_background_sync_max_pages: int = 3
     token_encryption_key: str | None = None
     # Keep this as a simple string so pydantic-settings doesn't require JSON
     # parsing for list types in `.env`. Accepts either CSV or JSON array.

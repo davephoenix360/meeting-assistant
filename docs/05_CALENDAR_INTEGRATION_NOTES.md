@@ -24,8 +24,10 @@ Imported events can create meeting records. The event remains linked through
 `calendar_events.imported_meeting_id`.
 
 The `/calendar` page auto-syncs connected OAuth accounts every five minutes while
-the page is open. This is intentionally lightweight for the MVP. A durable
-background scheduler is still needed for syncing when no user has the page open.
+the page is open. The backend also starts an in-process background sync loop for
+connected OAuth accounts so events can refresh even when no browser is open. This
+is still an MVP scheduler; production deployments should use a single durable
+worker or queue so multi-process servers do not run duplicate loops.
 
 ## What You Will Need For External Providers
 
@@ -51,6 +53,12 @@ background scheduler is still needed for syncing when no user has the page open.
 - `MICROSOFT_CALENDAR_CLIENT_ID`
 - `MICROSOFT_CALENDAR_CLIENT_SECRET`
 - `MICROSOFT_CALENDAR_TENANT`
+- `CALENDAR_BACKGROUND_SYNC_ENABLED`
+- `CALENDAR_BACKGROUND_SYNC_INTERVAL_SECONDS`
+- `CALENDAR_BACKGROUND_SYNC_DAYS_BACK`
+- `CALENDAR_BACKGROUND_SYNC_DAYS_FORWARD`
+- `CALENDAR_BACKGROUND_SYNC_MAX_RESULTS`
+- `CALENDAR_BACKGROUND_SYNC_MAX_PAGES`
 - `TOKEN_ENCRYPTION_KEY`
 
 Check the latest Google and Microsoft provider docs before implementing OAuth because
