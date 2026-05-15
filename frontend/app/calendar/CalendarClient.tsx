@@ -100,6 +100,35 @@ function providerLabel(provider: string) {
   return labels[provider] || provider;
 }
 
+function metadataRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function formatSyncTime(value?: string | null) {
+  return value ? formatDate(value) : "Not synced yet";
+}
+
+function syncSummary(account: CalendarAccount) {
+  const metadata = account.provider_metadata || {};
+  const manual = metadataRecord(metadata.last_sync_result);
+  const background = metadataRecord(metadata.last_background_sync_result);
+  const error = metadataRecord(metadata.last_background_sync_error);
+  const latest = Object.keys(background).length ? background : manual;
+  const imported = Number(latest.imported ?? latest.events_imported ?? 0);
+  const updated = Number(latest.updated ?? latest.events_updated ?? 0);
+  const scanned = Number(latest.events_scanned ?? 0);
+
+  return {
+    lastSync: formatSyncTime(account.last_sync_at),
+    result: Object.keys(latest).length
+      ? `${String(latest.source || "sync")} / ${imported} new / ${updated} updated / ${scanned} scanned`
+      : "No sync result yet",
+    error: Object.keys(error).length ? String(error.message || "Last background sync failed") : "",
+  };
+}
+
 async function fetchCalendarEvents(filters: {
   accountId: string;
   provider: string;
@@ -137,6 +166,16 @@ async function fetchCalendarEvents(filters: {
     throw new Error(await response.text());
   }
   return response.json() as Promise<CalendarEvent[]>;
+}
+
+async function fetchCalendarAccounts() {
+  const response = await fetch(
+    `${API_BASE_URL}/calendar/accounts?workspace_id=1&include_disconnected=true`,
+  );
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json() as Promise<CalendarAccount[]>;
 }
 
 export function CalendarClient({
@@ -247,6 +286,10 @@ export function CalendarClient({
     eventDateTo,
   ]);
 
+  const refreshAccounts = useCallback(async () => {
+    setAccounts(await fetchCalendarAccounts());
+  }, []);
+
   function upsertEvent(nextEvent: CalendarEvent) {
     setEvents((current) => {
       const existing = current.find((item) => item.id === nextEvent.id);
@@ -352,6 +395,9 @@ export function CalendarClient({
         );
       }
       if (result.status === "synced") {
+        if (!options.quiet) {
+          await refreshAccounts();
+        }
         await refreshEvents();
       }
     } catch (err) {
@@ -359,7 +405,7 @@ export function CalendarClient({
     } finally {
       setSyncingAccountId(null);
     }
-  }, [refreshEvents, syncSettingsPayload]);
+  }, [refreshAccounts, refreshEvents, syncSettingsPayload]);
 
   useEffect(() => {
     if (!autoSyncEnabled || !oauthAccounts.length) {
@@ -557,40 +603,48 @@ export function CalendarClient({
 
           {accounts.length ? (
             <div className="calendar-account-list">
-              {accounts.map((account) => (
-                <article className="calendar-account" key={account.id}>
-                  <div>
-                    <strong>{account.display_name || account.account_email}</strong>
-                    <p className="helper">
-                      {providerLabel(account.provider)} / {account.account_email}
-                    </p>
-                  </div>
-                  <div className="actions inline-actions">
-                    <span className={`status ${account.status}`}>
-                      {account.status}
-                    </span>
-                    {account.status !== "disconnected" ? (
-                      <>
-                        <button
-                          className="button subtle compact-button"
-                          disabled={syncingAccountId === account.id}
-                          onClick={() => void syncAccount(account.id)}
-                          type="button"
-                        >
-                          {syncingAccountId === account.id ? "Syncing..." : "Sync"}
-                        </button>
-                        <button
-                          className="button subtle danger compact-button"
-                          onClick={() => void disconnectAccount(account.id)}
-                          type="button"
-                        >
-                          Disconnect
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
+              {accounts.map((account) => {
+                const status = syncSummary(account);
+                return (
+                  <article className="calendar-account" key={account.id}>
+                    <div>
+                      <strong>{account.display_name || account.account_email}</strong>
+                      <p className="helper">
+                        {providerLabel(account.provider)} / {account.account_email}
+                      </p>
+                      <div className="calendar-sync-summary">
+                        <span>Last sync: {status.lastSync}</span>
+                        <span>{status.result}</span>
+                        {status.error ? <span className="sync-error">{status.error}</span> : null}
+                      </div>
+                    </div>
+                    <div className="actions inline-actions">
+                      <span className={`status ${account.status}`}>
+                        {account.status}
+                      </span>
+                      {account.status !== "disconnected" ? (
+                        <>
+                          <button
+                            className="button subtle compact-button"
+                            disabled={syncingAccountId === account.id}
+                            onClick={() => void syncAccount(account.id)}
+                            type="button"
+                          >
+                            {syncingAccountId === account.id ? "Syncing..." : "Sync"}
+                          </button>
+                          <button
+                            className="button subtle danger compact-button"
+                            onClick={() => void disconnectAccount(account.id)}
+                            type="button"
+                          >
+                            Disconnect
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <p className="helper">No calendar accounts have been added yet.</p>

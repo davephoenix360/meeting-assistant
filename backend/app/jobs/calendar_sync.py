@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy.orm import Session
@@ -116,11 +117,15 @@ async def sync_one_calendar_account(
     account.provider_metadata_json = {
         **(account.provider_metadata_json or {}),
         "last_background_sync_result": {
+            "source": "background",
+            "status": "synced",
             "imported": imported,
             "updated": updated,
             "token_refreshed": refreshed,
             "events_scanned": len(normalized_events),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
         },
+        "last_background_sync_error": {},
     }
     db.commit()
     return {
@@ -153,16 +158,19 @@ async def run_calendar_sync_once() -> list[dict]:
             try:
                 results.append(await sync_one_calendar_account(db, account, token))
             except (TokenEncryptionError, httpx.HTTPError, ValueError) as e:
+                account_id = account.id
+                provider = account.provider
                 db.rollback()
+                record_background_sync_failure(db, account_id, provider, e)
                 logger.warning(
                     "Background calendar sync failed for account %s: %s",
-                    account.id,
+                    account_id,
                     e,
                 )
                 results.append(
                     {
-                        "account_id": account.id,
-                        "provider": account.provider,
+                        "account_id": account_id,
+                        "provider": provider,
                         "status": "failed",
                         "message": str(e),
                     }
@@ -170,6 +178,28 @@ async def run_calendar_sync_once() -> list[dict]:
         return results
     finally:
         db.close()
+
+
+def record_background_sync_failure(
+    db: Session,
+    account_id: int,
+    provider: str,
+    error: Exception,
+) -> None:
+    account = db.get(CalendarAccount, account_id)
+    if not account:
+        return
+    account.provider_metadata_json = {
+        **(account.provider_metadata_json or {}),
+        "last_background_sync_error": {
+            "source": "background",
+            "status": "failed",
+            "provider": provider,
+            "message": str(error),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        },
+    }
+    db.commit()
 
 
 async def calendar_sync_loop(stop_event: asyncio.Event) -> None:

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -44,6 +44,7 @@ from app.schemas.summary import MeetingSummarySchema
 from app.schemas.calendar import (
     CalendarAccountCreate,
     CalendarAccountOut,
+    CalendarAccountSyncStatusOut,
     CalendarBulkMeetingCreate,
     CalendarBulkMeetingCreateOut,
     CalendarEventCreate,
@@ -249,6 +250,20 @@ def calendar_account_out(account: CalendarAccount) -> CalendarAccountOut:
         last_sync_at=account.last_sync_at,
         created_at=account.created_at,
         updated_at=account.updated_at,
+    )
+
+
+def calendar_account_sync_status_out(account: CalendarAccount) -> CalendarAccountSyncStatusOut:
+    metadata = account.provider_metadata_json or {}
+    return CalendarAccountSyncStatusOut(
+        account_id=account.id,
+        provider=account.provider,
+        account_email=account.account_email,
+        status=account.status,
+        last_sync_at=account.last_sync_at,
+        last_manual_sync_result=metadata.get("last_sync_result") or {},
+        last_background_sync_result=metadata.get("last_background_sync_result") or {},
+        last_background_sync_error=metadata.get("last_background_sync_error") or {},
     )
 
 
@@ -668,6 +683,19 @@ def list_calendar_providers():
     return list_calendar_provider_statuses()
 
 
+@router.get("/calendar/sync-status", response_model=list[CalendarAccountSyncStatusOut])
+def list_calendar_sync_status(
+    workspace_id: int = 1,
+    include_disconnected: bool = False,
+    db: Session = Depends(get_db),
+):
+    query = db.query(CalendarAccount).filter(CalendarAccount.workspace_id == workspace_id)
+    if not include_disconnected:
+        query = query.filter(CalendarAccount.status != "disconnected")
+    accounts = query.order_by(CalendarAccount.created_at.desc(), CalendarAccount.id.desc()).all()
+    return [calendar_account_sync_status_out(account) for account in accounts]
+
+
 @router.get("/calendar/oauth/{provider}/start")
 def start_calendar_oauth(
     provider: str,
@@ -902,11 +930,14 @@ async def sync_calendar_account_route(
     account.provider_metadata_json = {
         **(account.provider_metadata_json or {}),
         "last_sync_result": {
+            "source": "manual",
+            "status": "synced",
             "imported": imported,
             "updated": updated,
             "token_refreshed": refreshed,
             "events_scanned": len(normalized_events),
             "sync_window": sync_window,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
         },
     }
     db.commit()

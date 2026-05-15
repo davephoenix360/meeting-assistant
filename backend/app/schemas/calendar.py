@@ -201,3 +201,14 @@ class CalendarSyncResultOut(BaseModel):
     token_refreshed: bool = False
     events_scanned: int = 0
     sync_window: dict = Field(default_factory=dict)
+
+
+class CalendarAccountSyncStatusOut(BaseModel):
+    account_id: int
+    provider: str
+    account_email: str
+    status: str
+    last_sync_at: datetime | None = None
+    last_manual_sync_result: dict = Field(default_factory=dict)
+    last_background_sync_result: dict = Field(default_factory=dict)
+    last_background_sync_error: dict = Field(default_factory=dict)

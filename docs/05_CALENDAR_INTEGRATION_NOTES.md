@@ -12,6 +12,7 @@ model so future providers do not force a rewrite.
 - List accounts with `GET /api/calendar/accounts`.
 - List/import events with `GET /api/calendar/events` and `POST /api/calendar/events`.
 - Check provider readiness with `GET /api/calendar/providers`.
+- Check account sync status with `GET /api/calendar/sync-status`.
 - Start OAuth with `GET /api/calendar/oauth/{provider}/start`; browser requests redirect to the provider, and `?as_json=true` returns the authorization payload for debugging.
 - Receive OAuth callback codes, exchange them for tokens, store encrypted token values, and redirect back to `/calendar`.
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
@@ -28,6 +29,8 @@ the page is open. The backend also starts an in-process background sync loop for
 connected OAuth accounts so events can refresh even when no browser is open. This
 is still an MVP scheduler; production deployments should use a single durable
 worker or queue so multi-process servers do not run duplicate loops.
+Calendar account rows show the latest sync time, last result counts, and the last
+background sync error when one exists.
 
 ## What You Will Need For External Providers
 

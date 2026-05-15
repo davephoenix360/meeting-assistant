@@ -906,6 +906,19 @@ h3 {
   padding: 14px;
 }
 
+.calendar-sync-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sync-error {
+  color: var(--danger);
+}
+
 .calendar-context-panel {
   display: grid;
   gap: 14px;
