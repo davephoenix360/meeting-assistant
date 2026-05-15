@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 import httpx
 from sqlalchemy import String, cast, or_
 from sqlalchemy.exc import IntegrityError
@@ -668,12 +668,19 @@ def list_calendar_providers():
     return list_calendar_provider_statuses()
 
 
-@router.get("/calendar/oauth/{provider}/start", response_model=CalendarOAuthStartOut)
-def start_calendar_oauth(provider: str, workspace_id: int = 1):
+@router.get("/calendar/oauth/{provider}/start")
+def start_calendar_oauth(
+    provider: str,
+    workspace_id: int = 1,
+    as_json: bool = False,
+):
     try:
-        return build_calendar_authorization_url(provider, workspace_id=workspace_id)
+        payload = build_calendar_authorization_url(provider, workspace_id=workspace_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    if as_json:
+        return CalendarOAuthStartOut(**payload)
+    return RedirectResponse(payload["authorization_url"], status_code=302)
 
 
 @router.get("/calendar/oauth/{provider}/callback")
@@ -766,14 +773,11 @@ async def calendar_oauth_callback(
 
     db.commit()
     db.refresh(account)
-    return {
-        "provider": provider,
-        "state": state,
-        "status": "connected",
-        "account_id": account.id,
-        "account_email": account.account_email,
-        "message": "Calendar OAuth token exchange completed and tokens were stored encrypted.",
-    }
+    frontend_url = settings.frontend_public_url.rstrip("/")
+    return RedirectResponse(
+        f"{frontend_url}/calendar?calendar_connected={account.provider}",
+        status_code=302,
+    )
 
 
 @router.post("/calendar/accounts", response_model=CalendarAccountOut)

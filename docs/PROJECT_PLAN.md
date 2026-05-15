@@ -69,6 +69,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - The frontend can show active transcription provider status before upload and on settings/detail screens.
 - Calendar accounts and imported calendar events have provider-neutral backend models and a workspace UI.
 - Calendar integration has provider status, OAuth URL, callback token exchange, encrypted token storage, and Google/Microsoft event sync.
+- Calendar OAuth start routes redirect browser users to providers and support JSON debugging with `as_json=true`.
 - Calendar provider sync refreshes expired or rejected access tokens with stored refresh tokens.
 - Imported calendar events can create linked meeting records with calendar context attached.
 - Meeting detail surfaces linked calendar event metadata, attendees, meeting URLs, and artifacts.

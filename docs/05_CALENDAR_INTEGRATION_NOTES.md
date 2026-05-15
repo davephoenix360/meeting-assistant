@@ -1,8 +1,8 @@
 # Calendar Integration Notes
 
-The current calendar slice is provider-neutral and does not call external APIs yet.
-It adds local storage and app APIs for calendar accounts and imported events so Google
-Calendar, Microsoft Graph, Outlook, and manual imports can share the same product model.
+The calendar slice is provider-neutral and can connect to Google Calendar and
+Microsoft Graph through OAuth. Local/manual imports still use the same product
+model so future providers do not force a rewrite.
 
 ## What Works Now
 
@@ -12,8 +12,8 @@ Calendar, Microsoft Graph, Outlook, and manual imports can share the same produc
 - List accounts with `GET /api/calendar/accounts`.
 - List/import events with `GET /api/calendar/events` and `POST /api/calendar/events`.
 - Check provider readiness with `GET /api/calendar/providers`.
-- Build OAuth authorization URLs with `GET /api/calendar/oauth/{provider}/start`.
-- Receive OAuth callback codes, exchange them for tokens, and store encrypted token values at `GET /api/calendar/oauth/{provider}/callback`.
+- Start OAuth with `GET /api/calendar/oauth/{provider}/start`; browser requests redirect to the provider, and `?as_json=true` returns the authorization payload for debugging.
+- Receive OAuth callback codes, exchange them for tokens, store encrypted token values, and redirect back to `/calendar`.
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
 - Create linked meeting records from imported events with `POST /api/calendar/events/{id}/create-meeting`.
 
@@ -28,6 +28,7 @@ Imported events can create meeting records. The event remains linked through
 - A Google Cloud project for Google Calendar, or a Microsoft Entra app registration for Microsoft Graph/Outlook.
 - OAuth client ID and client secret.
 - A backend redirect URL, for example `http://localhost:8000/api/calendar/oauth/google/callback`.
+- A frontend return URL, for example `http://localhost:3000/calendar`.
 - Calendar read scopes approved for your test account.
   - Google default: `https://www.googleapis.com/auth/calendar.events.readonly`.
   - Microsoft default: `Calendars.Read` plus `offline_access` for refresh tokens.
@@ -40,6 +41,7 @@ Imported events can create meeting records. The event remains linked through
 ## Environment Variables
 
 - `BACKEND_PUBLIC_URL`
+- `FRONTEND_PUBLIC_URL`
 - `GOOGLE_CALENDAR_CLIENT_ID`
 - `GOOGLE_CALENDAR_CLIENT_SECRET`
 - `MICROSOFT_CALENDAR_CLIENT_ID`

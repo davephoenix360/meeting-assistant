@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     local_whisper_compute_type: str = "default"
     upload_dir: str = "./storage/uploads"
     backend_public_url: str = "http://localhost:8000"
+    frontend_public_url: str = "http://localhost:3000"
     google_calendar_client_id: str | None = None
     google_calendar_client_secret: str | None = None
     microsoft_calendar_client_id: str | None = None
