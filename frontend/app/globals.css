@@ -1003,6 +1003,12 @@ h3 {
   gap: 14px;
 }
 
+.artifact-probe-panel,
+.probe-result {
+  display: grid;
+  gap: 12px;
+}
+
 .artifact-match-list {
   display: grid;
   gap: 10px;

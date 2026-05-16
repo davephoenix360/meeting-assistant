@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 os.environ["CALENDAR_BACKGROUND_SYNC_ENABLED"] = "false"
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["TOKEN_ENCRYPTION_KEY"] = "test-token-key"
 os.environ.setdefault("GOOGLE_CALENDAR_CLIENT_ID", "test-google-client")
 os.environ.setdefault("GOOGLE_CALENDAR_CLIENT_SECRET", "test-google-secret")
 os.environ.setdefault("MICROSOFT_CALENDAR_CLIENT_ID", "test-microsoft-client")

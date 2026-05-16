@@ -1,3 +1,7 @@
+
+
+
+
 # AI Meeting Assistant Product Plan
 
 This is the living project planner. Update it after each completed work slice so the repo remains the source of truth for product direction, completed capabilities, and next steps.
@@ -76,6 +80,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - Calendar accounts expose last sync status/result/error details in the API and calendar UI.
 - Provider-specific artifact permission requirements are documented for Google Meet, Microsoft Teams, and Zoom before implementation.
 - Artifact provider readiness is exposed through an API and compact calendar UI status cards before import probes are shown.
+- Meeting detail can manually probe linked Google Meet calendar events for provider-side transcripts and recordings.
 - Imported calendar events can create linked meeting records with calendar context attached.
 - Backend pytest and Playwright/Chrome E2E smoke testing are scaffolded with isolated test databases and screenshot capture.
 - Meeting detail surfaces linked calendar event metadata, attendees, meeting URLs, and artifacts.
@@ -154,6 +159,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 - [x] Calendar sync status details for manual/background sync.
 - [x] Post-meeting transcript/recording artifact matching.
 - [x] Provider capability/status endpoints for artifact imports.
+- [x] Google Meet artifact probe on linked meetings.
 - [ ] Post-meeting transcript/recording imports where provider APIs allow.
 
 ### Phase 6: Meeting Platform Integrations
@@ -184,7 +190,7 @@ Do not make the architecture dependent on one meeting platform or one AI provide
 
 ## Next Recommended Work
 
-1. Add provider API artifact import probes for Zoom/Google/Microsoft.
-2. Add saved calendar automation rules.
-3. Add durable artifact metadata storage for provider-imported files.
+1. Add Microsoft Teams artifact probe on linked meetings.
+2. Add Zoom artifact probe on linked meetings or matched Zoom URLs.
+3. Add saved calendar automation rules.
 4. Add durable sync-history table if account-level status is not enough.

@@ -4,6 +4,7 @@ $frontendPort = if ($env:E2E_FRONTEND_PORT) { [int]$env:E2E_FRONTEND_PORT } else
 $backendPort = if ($env:E2E_BACKEND_PORT) { [int]$env:E2E_BACKEND_PORT } else { 8100 }
 $frontendUrl = "http://127.0.0.1:$frontendPort"
 $backendUrl = "http://127.0.0.1:$backendPort/api/artifacts/providers/status"
+$corsOrigins = "http://127.0.0.1:$frontendPort,http://localhost:$frontendPort,http://127.0.0.1:3000,http://localhost:3000"
 $repoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $backendDir = Join-Path $repoRoot "backend"
 $frontendDir = (Resolve-Path "$PSScriptRoot\..").Path
@@ -45,6 +46,9 @@ try {
   $backendEnv = @{
     CALENDAR_BACKGROUND_SYNC_ENABLED = "false"
     DATABASE_URL = $e2eDatabaseUrl
+    CORS_ORIGINS = $corsOrigins
+    FRONTEND_PUBLIC_URL = $frontendUrl
+    BACKEND_PUBLIC_URL = "http://127.0.0.1:$backendPort"
   }
   foreach ($key in $backendEnv.Keys) {
     Set-Item -Path "Env:$key" -Value $backendEnv[$key]

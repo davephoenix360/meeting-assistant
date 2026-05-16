@@ -14,6 +14,7 @@ model so future providers do not force a rewrite.
 - Check provider readiness with `GET /api/calendar/providers`.
 - Check account sync status with `GET /api/calendar/sync-status`.
 - Check artifact-import readiness with `GET /api/artifacts/providers/status`.
+- Probe linked Google Meet artifacts with `GET /api/meetings/{id}/artifact-probe/google-meet`.
 - Start OAuth with `GET /api/calendar/oauth/{provider}/start`; browser requests redirect to the provider, and `?as_json=true` returns the authorization payload for debugging.
 - Receive OAuth callback codes, exchange them for tokens, store encrypted token values, and redirect back to `/calendar`.
 - Trigger the provider sync boundary with `POST /api/calendar/accounts/{id}/sync`.
@@ -74,3 +75,7 @@ allowed redirect URLs, consent screen rules, and required scopes can change.
 Calendar scopes do not grant recording or transcript access. See
 `docs/06_PROVIDER_ARTIFACT_PERMISSIONS.md` before adding provider-specific
 artifact imports.
+
+The meeting detail page can manually probe a linked Google Meet event and report
+states such as missing connection, missing scope, no Meet code, no conference
+record, or available transcript/recording artifacts.

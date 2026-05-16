@@ -40,7 +40,7 @@ from app.schemas.meeting import (
     MeetingArtifactAttachOut,
     TranscriptionProviderStatusOut,
 )
-from app.schemas.artifacts import ArtifactProviderStatusOut
+from app.schemas.artifacts import ArtifactProbeOut, ArtifactProviderStatusOut
 from app.schemas.summary import MeetingSummarySchema
 from app.schemas.calendar import (
     CalendarAccountCreate,
@@ -82,6 +82,7 @@ from app.services.calendar.providers import (
 )
 from app.services.calendar.token_crypto import TokenEncryptionError
 from app.services.artifacts.providers import list_artifact_provider_statuses
+from app.services.artifacts.google_meet import probe_google_meet_artifacts
 import os
 import re
 
@@ -1284,6 +1285,29 @@ def get_meeting_calendar_event(meeting_id: int, db: Session = Depends(get_db)):
     if not event:
         raise HTTPException(404)
     return meeting_calendar_event_out(event)
+
+
+@router.get(
+    "/meetings/{meeting_id}/artifact-probe/google-meet",
+    response_model=ArtifactProbeOut,
+)
+async def probe_meeting_google_meet_artifacts(
+    meeting_id: int,
+    db: Session = Depends(get_db),
+):
+    meeting = db.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(404)
+
+    event = (
+        db.query(CalendarEvent)
+        .filter(CalendarEvent.imported_meeting_id == meeting_id)
+        .first()
+    )
+    if not event:
+        raise HTTPException(404, "No linked calendar event was found for this meeting.")
+
+    return await probe_google_meet_artifacts(db, event)
 
 
 @router.get(

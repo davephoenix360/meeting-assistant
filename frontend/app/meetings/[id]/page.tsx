@@ -127,6 +127,29 @@ type ArtifactAttachResult = {
   copied_fields: string[];
 };
 
+type ArtifactProbeItem = {
+  artifact_type: string;
+  resource_name?: string | null;
+  state?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  destination_url?: string | null;
+};
+
+type ArtifactProbe = {
+  provider: string;
+  label: string;
+  status: string;
+  message: string;
+  meeting_code?: string | null;
+  conference_record?: string | null;
+  counts: Record<string, number>;
+  missing_scopes: string[];
+  artifacts: ArtifactProbeItem[];
+  docs_url?: string | null;
+  checked_at?: string | null;
+};
+
 type TranscriptionStatus = {
   provider: string;
   mode: string;
@@ -262,12 +285,17 @@ function artifactUrl(artifact: Record<string, unknown>) {
   return String(artifact.url || artifact.fileUrl || "");
 }
 
+function isGoogleMeetUrl(value?: string | null) {
+  return Boolean(value && value.includes("meet.google.com/"));
+}
+
 export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [output, setOutput] = useState<AIOutput | null>(null);
   const [relatedMeetings, setRelatedMeetings] = useState<RelatedMeeting[]>([]);
   const [calendarEvent, setCalendarEvent] = useState<CalendarEvent | null>(null);
   const [artifactMatches, setArtifactMatches] = useState<ArtifactMatch[]>([]);
+  const [artifactProbe, setArtifactProbe] = useState<ArtifactProbe | null>(null);
   const [transcriptionStatus, setTranscriptionStatus] =
     useState<TranscriptionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -282,6 +310,7 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
   const [tagDraft, setTagDraft] = useState("");
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [attachingMatchId, setAttachingMatchId] = useState<number | null>(null);
+  const [isProbingArtifacts, setIsProbingArtifacts] = useState(false);
   const [artifactMatchMessage, setArtifactMatchMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -414,6 +443,26 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
       setError(err instanceof Error ? err.message : "Unable to attach calendar match.");
     } finally {
       setAttachingMatchId(null);
+    }
+  }
+
+  async function probeGoogleMeetArtifacts() {
+    if (isProbingArtifacts) {
+      return;
+    }
+
+    setIsProbingArtifacts(true);
+    setError("");
+    try {
+      const nextProbe = await getJson<ArtifactProbe>(
+        `/meetings/${params.id}/artifact-probe/google-meet`,
+      );
+      setArtifactProbe(nextProbe);
+    } catch (err) {
+      setArtifactProbe(null);
+      setError(err instanceof Error ? err.message : "Unable to probe Google Meet artifacts.");
+    } finally {
+      setIsProbingArtifacts(false);
     }
   }
 
@@ -1003,6 +1052,94 @@ export default function MeetingDetail({ params }: { params: { id: string } }) {
                       </a>
                     ) : null;
                   })}
+                </div>
+              ) : null}
+              {isGoogleMeetUrl(calendarEvent.meeting_url) ? (
+                <div className="artifact-probe-panel">
+                  <div className="section-heading compact">
+                    <div>
+                      <p className="eyebrow">Meet artifacts</p>
+                      <h3>Probe Google Meet</h3>
+                    </div>
+                    <button
+                      className="button subtle compact-button"
+                      disabled={isProbingArtifacts}
+                      onClick={() => void probeGoogleMeetArtifacts()}
+                      type="button"
+                    >
+                      {isProbingArtifacts ? "Probing..." : "Run probe"}
+                    </button>
+                  </div>
+                  {artifactProbe ? (
+                    <div className="probe-result">
+                      <div className="meta-row">
+                        <span className={`status ${artifactProbe.status}`}>
+                          {artifactProbe.status.replace(/_/g, " ")}
+                        </span>
+                        {artifactProbe.meeting_code ? (
+                          <span className="pill">Meet code: {artifactProbe.meeting_code}</span>
+                        ) : null}
+                        {artifactProbe.counts.transcripts ? (
+                          <span className="pill">
+                            {artifactProbe.counts.transcripts} transcript(s)
+                          </span>
+                        ) : null}
+                        {artifactProbe.counts.recordings ? (
+                          <span className="pill">
+                            {artifactProbe.counts.recordings} recording(s)
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="helper">{artifactProbe.message}</p>
+                      {artifactProbe.missing_scopes.length ? (
+                        <div className="calendar-chip-list">
+                          {artifactProbe.missing_scopes.map((scope) => (
+                            <span className="pill" key={scope}>
+                              Missing: {scope}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {artifactProbe.artifacts.length ? (
+                        <div className="calendar-artifact-list">
+                          {artifactProbe.artifacts.map((artifact, index) => (
+                            artifact.destination_url ? (
+                              <a
+                                className="related-item"
+                                href={artifact.destination_url}
+                                key={`${artifact.destination_url}-${index}`}
+                              >
+                                <strong>
+                                  {artifact.artifact_type} / {artifact.state || "available"}
+                                </strong>
+                                <span className="helper">
+                                  {artifact.destination_url}
+                                </span>
+                              </a>
+                            ) : (
+                              <div className="related-item" key={`${artifact.resource_name}-${index}`}>
+                                <strong>
+                                  {artifact.artifact_type} / {artifact.state || "available"}
+                                </strong>
+                                <span className="helper">
+                                  {artifact.resource_name || "Provider resource"}
+                                </span>
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      ) : null}
+                      {artifactProbe.docs_url ? (
+                        <a className="pill link-pill" href={artifactProbe.docs_url}>
+                          Provider docs
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="helper">
+                      Probe the linked Meet conference record to see whether Google already has transcripts or recordings ready.
+                    </p>
+                  )}
                 </div>
               ) : null}
             </article>
